@@ -1,0 +1,37 @@
+name: endurance
+description: >
+  Fly a square patrol over and over until the battery, rather than the
+  instruction, ends the flight. This answers the question no current AVLN
+  benchmark asks: how far can this airframe actually get. Wind shortens it,
+  because holding a tilt against a draught costs power the whole time.
+
+  A second thing shows up for free. Every leg is a *relative* move, so each
+  one's few centimetres of error carries into the next, and a steady wind biases
+  them all the same way. Over enough laps the accumulated drift walks the drone
+  into a wall -- which is exactly why dead reckoning cannot be trusted for a
+  long mission, and why the collision count at the end is not a bug.
+
+sim:
+  realtime: false
+  seed: 5
+
+world:
+  name: endurance patrol until the battery runs out
+  bounds_lower: [-8.0, -8.0, 0.0]
+  bounds_upper: [8.0, 8.0, 2.5]
+  wind:
+    type: constant
+    velocity: [0.5, 0.0, 0.0]
+
+drones:
+  - {name: tello-1, start: [-1.5, -1.5, 0.0]}
+
+script:
+  - all: takeoff
+  - all: "speed 60"
+  - repeat:
+      times: 300
+      while_battery_above: 12
+      steps:
+        - {all: "forward 300"}
+        - {all: "cw 90"}

@@ -1,0 +1,8 @@
+* text=auto
+
+*.mp4  binary
+*.mov  binary
+*.png  binary
+*.gif  binary
+*.js   linguist-vendored=false
+tello_sim/viewer/vendor/*.js linguist-vendored

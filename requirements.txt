@@ -1,0 +1,14 @@
+# The simulator itself needs only these two.
+numpy>=1.24
+pyyaml>=6.0
+
+# Plots and flight videos.
+matplotlib>=3.7
+
+# Only needed to talk to the simulator over real UDP with the real library,
+# or to fly the actual drone. Batch experiments do not need it.
+djitellopy>=2.5.0
+
+# Gives matplotlib an MP4 writer without installing ffmpeg system-wide.
+# Without it, videos are written as animated GIFs instead (much larger files).
+imageio-ffmpeg>=0.4.9

@@ -1,0 +1,50 @@
+name: slalom
+description: >
+  Five pillars in a line, alternating sides, flown as a weave. A precision task
+  rather than a navigation one: the route is fixed and known, so anything that
+  goes wrong is control error and nothing else.
+
+  The point is the crosswind. Every leg is diagonal, so the wind is never purely
+  along or across the direction of travel, and the tracking error grows leg by
+  leg because each `go` is relative to wherever the last one actually ended.
+  Turn the wind up and watch where the weave stops closing -- that number is the
+  precision budget for anything else built on top of relative moves.
+
+sim:
+  realtime: false
+  seed: 8
+
+world:
+  name: five-pillar slalom in a 1.2 m/s crosswind
+  bounds_lower: [-5.0, -2.5, 0.0]
+  bounds_upper: [5.0, 2.5, 2.5]
+  obstacles:
+    - {type: cylinder, center_xy: [-3.0, 0.7], radius: 0.16, z_min: 0.0, z_max: 2.5, name: pillar 1}
+    - {type: cylinder, center_xy: [-1.5, -0.7], radius: 0.16, z_min: 0.0, z_max: 2.5, name: pillar 2}
+    - {type: cylinder, center_xy: [0.0, 0.7], radius: 0.16, z_min: 0.0, z_max: 2.5, name: pillar 3}
+    - {type: cylinder, center_xy: [1.5, -0.7], radius: 0.16, z_min: 0.0, z_max: 2.5, name: pillar 4}
+    - {type: cylinder, center_xy: [3.0, 0.7], radius: 0.16, z_min: 0.0, z_max: 2.5, name: pillar 5}
+  mission_pads:
+    - {pad_id: 1, center: [-4.5, 0.0]}
+    - {pad_id: 2, center: [4.5, 0.0]}
+  wind:
+    type: sum
+    fields:
+      - {type: constant, velocity: [0.0, 1.2, 0.0]}
+      - {type: turbulent, mean: [0.0, 0.0, 0.0], sigma: 0.3, theta: 0.9}
+
+drones:
+  - {name: tello-1, start: [-4.5, 0.0, 0.0]}
+
+script:
+  - all: takeoff
+  - all: "speed 50"
+  # Weave: pass each pillar on the far side from where it sits.
+  - {drone: tello-1, cmd: "go 150 -70 0 50"}
+  - {drone: tello-1, cmd: "go 150 140 0 50"}
+  - {drone: tello-1, cmd: "go 150 -140 0 50"}
+  - {drone: tello-1, cmd: "go 150 140 0 50"}
+  - {drone: tello-1, cmd: "go 150 -140 0 50"}
+  - {drone: tello-1, cmd: "go 150 70 0 50"}
+  - wait: 1.0
+  - all: land

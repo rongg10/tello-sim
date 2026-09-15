@@ -1,0 +1,86 @@
+name: corridor
+description: >
+  A corridor with two doorways, 90 cm wide. The drone's cage is 26 cm across, so
+  there is about 30 cm of clearance either side -- comfortable in still air and
+  not comfortable otherwise.
+
+  A cross-draught of 2.6 m/s blows across the FIRST doorway from t=8s to t=20s.
+  The drone survives it. Then it crashes into the SECOND doorway, in still air,
+  seven seconds after the wind has stopped.
+
+  That is the point of this scenario, and it was not designed in -- it came out
+  of the physics. Every command is a *relative* move, so once the gust has
+  shoved the drone half a metre sideways, nothing ever puts it back. It flies
+  the rest of the corridor perfectly, parallel to where it should be, and
+  arrives at a gap it no longer fits through. Measured over eight seeds:
+
+      seed   worst y under gust   y arriving at door 2   outcome
+        6         -0.51                 -0.32            hits door 2
+        7         -0.90                 -0.73            hits door 2
+        8         -1.04                 -0.94            hits door 2
+        9         -0.91                 -0.83            hits door 2
+       10         -0.83                 -0.59            hits door 1 and door 2
+       11         -0.55                 -0.31            hits door 2
+       12         -1.05                 -0.80            hits door 1 and door 2
+       13         -0.72                 -0.54            hits door 2
+
+  Eight out of eight. The disturbance and the failure are in different places
+  and twelve seconds apart, which is what makes this hard: at the moment of the
+  crash there is nothing in the telemetry to react to. Recovering needs an
+  absolute position fix, which on real hardware means the mission pad on the
+  floor at the corridor's midpoint -- deliberately placed there, deliberately
+  not used by the script.
+
+  Raise the gust to 3.0 m/s and it fails at the first doorway too, immediately
+  and every time. Drop it to 1.8 and it gets through both.
+
+sim:
+  realtime: false
+  seed: 6
+
+world:
+  name: corridor with two doorways
+  bounds_lower: [-7.0, -1.4, 0.0]
+  bounds_upper: [7.0, 1.4, 2.4]
+  obstacles:
+    # First doorway at x = -2.5, leaving a gap of 90 cm.
+    - {type: box, lower: [-2.56, -1.4, 0.0], upper: [-2.44, -0.45, 2.4], name: door 1 south}
+    - {type: box, lower: [-2.56, 0.45, 0.0], upper: [-2.44, 1.4, 2.4], name: door 1 north}
+    # Second doorway at x = +2.5.
+    - {type: box, lower: [2.44, -1.4, 0.0], upper: [2.56, -0.45, 2.4], name: door 2 south}
+    - {type: box, lower: [2.44, 0.45, 0.0], upper: [2.56, 1.4, 2.4], name: door 2 north}
+    - {type: box, lower: [5.0, 0.9, 0.0], upper: [6.8, 1.35, 1.1], name: cabinet}
+  mission_pads:
+    - {pad_id: 1, center: [0.0, 0.0]}
+    - {pad_id: 2, center: [6.0, -0.6]}
+  wind:
+    type: sum
+    fields:
+      - {type: turbulent, mean: [0.0, 0.0, 0.0], sigma: 0.2, theta: 0.9}
+      - type: transient
+        start: 8.0
+        duration: 12.0
+        rise: 1.0
+        field:
+          type: wind_tunnel
+          velocity: [0.0, -2.6, 0.0]
+          lower: [-3.3, -3.0, -1.0]
+          upper: [-1.7, 3.0, 3.0]
+
+drones:
+  - {name: tello-1, start: [-6.0, 0.0, 0.0]}
+
+script:
+  - all: takeoff
+  - all: "speed 60"
+  - {drone: tello-1, cmd: "forward 200"}
+  - wait: 2.0
+  # Arrives at the first doorway just as the draught comes up.
+  - {drone: tello-1, cmd: "forward 200"}
+  - wait: 2.0
+  - {drone: tello-1, cmd: "forward 250"}
+  - wait: 2.0
+  - {drone: tello-1, cmd: "forward 250"}
+  - wait: 2.0
+  - {drone: tello-1, cmd: "forward 200"}
+  - all: land

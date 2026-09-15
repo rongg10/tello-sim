@@ -1,0 +1,64 @@
+name: open_window
+description: >
+  An ordinary furnished room with one thing wrong with it: a window is open, and
+  nineteen seconds in a 3 m/s gust comes through it for six seconds. Everywhere
+  else in the room the air is nearly still.
+
+  3 m/s is past what this airframe can hold against -- the limit is around
+  2.5 -- so inside that patch of air the drone does not fight the wind, it goes
+  with it. Outside the patch it is fine. The hazard is real, brief, and local,
+  and nothing in the telemetry distinguishes it from the drone's own control
+  error until it is already moving.
+
+  This is the cleanest test of whether a policy can tell "I am off course" from
+  "I am being carried", which are the same reading and different problems.
+
+sim:
+  realtime: false
+  seed: 11
+
+world:
+  name: furnished room, gust through an open window at t=16s
+  bounds_lower: [-4.0, -4.0, 0.0]
+  bounds_upper: [4.0, 4.0, 2.7]
+  obstacles:
+    - {type: box, lower: [-3.8, 1.0, 0.0], upper: [-2.9, 3.4, 0.75], name: desk}
+    - {type: box, lower: [-1.0, -3.9, 0.0], upper: [2.4, -3.1, 1.9], name: cupboard}
+    - {type: box, lower: [0.6, 0.4, 0.0], upper: [2.6, 1.6, 0.45], name: low table}
+    - {type: cylinder, center_xy: [-3.4, 0.5], radius: 0.24, z_min: 0.0, z_max: 1.3, name: plant}
+    - {type: cylinder, center_xy: [3.3, 3.3], radius: 0.2, z_min: 0.0, z_max: 2.7, name: pillar}
+  mission_pads:
+    - {pad_id: 1, center: [-3.0, -3.0]}
+    - {pad_id: 2, center: [3.0, -1.0]}
+  wind:
+    type: sum
+    fields:
+      - {type: turbulent, mean: [0.0, 0.0, 0.0], sigma: 0.15, theta: 1.0}
+      # Air pouring in through an open window in the north wall.
+      - type: transient
+        start: 19.0
+        duration: 6.0
+        rise: 0.8
+        field:
+          type: wind_tunnel
+          velocity: [0.0, -3.0, 0.0]
+          lower: [0.0, 1.5, 0.6]
+          upper: [3.0, 4.2, 2.2]
+
+drones:
+  - {name: tello-1, start: [-3.0, -3.0, 0.0]}
+
+script:
+  - all: takeoff
+  - all: "speed 45"
+  - all: "up 45"
+  # Cross the room diagonally; the route passes right through the window's reach.
+  - {drone: tello-1, cmd: "go 300 450 0 50"}
+  - wait: 1.0
+  # This leg runs through the window's reach, and the gust is up by now.
+  - {drone: tello-1, cmd: "go 150 100 0 40"}
+  - wait: 4.0
+  - {drone: tello-1, cmd: "cw 135"}
+  - {drone: tello-1, cmd: "forward 250"}
+  - wait: 2.0
+  - all: land

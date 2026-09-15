@@ -1,0 +1,56 @@
+name: warehouse
+description: >
+  Four rows of 2.4 m shelving with three aisles between them, and one drone per
+  aisle. The ceiling is 3.5 m, so flying over the racking is possible as well as
+  flying down the aisle.
+
+  That is the choice worth having. The wind is a boundary layer -- weak near the
+  floor, stronger with height, as it is outdoors and near any large opening --
+  so going over the top is the direct route into the worst air, and staying in
+  the aisle is sheltered but committed. Three drones make the same decision
+  independently and none of them can see what the others chose.
+
+sim:
+  realtime: false
+  seed: 9
+
+world:
+  name: warehouse aisles, wind stronger with height
+  bounds_lower: [-7.0, -6.0, 0.0]
+  bounds_upper: [7.0, 6.0, 3.5]
+  obstacles:
+    - {type: box, lower: [-6.0, -4.85, 0.0], upper: [6.0, -4.15, 2.4], name: rack A}
+    - {type: box, lower: [-6.0, -1.85, 0.0], upper: [6.0, -1.15, 2.4], name: rack B}
+    - {type: box, lower: [-6.0, 1.15, 0.0], upper: [6.0, 1.85, 2.4], name: rack C}
+    - {type: box, lower: [-6.0, 4.15, 0.0], upper: [6.0, 4.85, 2.4], name: rack D}
+  mission_pads:
+    - {pad_id: 1, center: [5.0, -3.0]}
+    - {pad_id: 2, center: [5.0, 0.0]}
+    - {pad_id: 3, center: [5.0, 3.0]}
+  wind:
+    type: sum
+    fields:
+      - type: boundary_layer
+        speed_at_reference: 1.3
+        reference_height: 2.0
+        direction: [0.0, 1.0, 0.0]
+        roughness: 0.06
+      - {type: turbulent, mean: [0.0, 0.0, 0.0], sigma: 0.3, theta: 0.8}
+
+drones:
+  - {name: tello-1, start: [-5.5, -3.0, 0.0]}
+  - {name: tello-2, start: [-5.5, 0.0, 0.0]}
+  - {name: tello-3, start: [-5.5, 3.0, 0.0]}
+
+script:
+  - all: takeoff
+  - all: "speed 60"
+  - all: "up 30"
+  - wait: 2.0
+  - all: "forward 350"
+  - wait: 3.0
+  - all: "forward 350"
+  - wait: 3.0
+  - all: "forward 250"
+  - wait: 2.0
+  - all: land

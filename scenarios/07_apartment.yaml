@@ -1,0 +1,74 @@
+name: apartment
+description: >
+  Three rooms joined by two doorways, each room marked with a mission pad. The
+  shape an instruction-following task actually needs: somewhere to be told to go,
+  a route with a choice in it, and a landmark to confirm arrival.
+
+  A steady draught blows through the first doorway, the way air does between two
+  rooms. It is a tailwind going one way and a headwind coming back, so the same
+  route costs different amounts of battery in each direction and the return leg
+  is the one that misses. An agent that plans a round trip on the outbound cost
+  will run out.
+
+sim:
+  realtime: false
+  seed: 7
+
+world:
+  name: three rooms, draught through the near doorway
+  bounds_lower: [-4.0, -4.0, 0.0]
+  bounds_upper: [4.0, 4.0, 2.6]
+  obstacles:
+    # Dividing wall on x = 0, with a 1.4 m doorway in the middle.
+    - {type: box, lower: [-0.06, -4.0, 0.0], upper: [0.06, -0.7, 2.6], name: wall x south}
+    - {type: box, lower: [-0.06, 0.7, 0.0], upper: [0.06, 4.0, 2.6], name: wall x north}
+    # Wall splitting the far side into two rooms, with a 1.0 m doorway.
+    - {type: box, lower: [0.06, -0.06, 0.0], upper: [2.2, 0.06, 2.6], name: wall y west}
+    - {type: box, lower: [3.2, -0.06, 0.0], upper: [4.0, 0.06, 2.6], name: wall y east}
+    # Furniture.
+    - {type: box, lower: [-2.8, -1.2, 0.0], upper: [-1.2, 0.4, 0.75], name: table}
+    - {type: box, lower: [-3.9, 1.5, 0.0], upper: [-3.2, 3.5, 1.7], name: bookcase}
+    - {type: box, lower: [1.0, 1.2, 0.0], upper: [3.6, 2.0, 0.85], name: sofa}
+    - {type: box, lower: [0.6, -3.6, 0.0], upper: [2.6, -2.8, 0.75], name: desk}
+    - {type: cylinder, center_xy: [-1.2, 3.2], radius: 0.25, z_min: 0.0, z_max: 1.2, name: plant}
+  mission_pads:
+    - {pad_id: 1, center: [-2.0, 2.6]}
+    - {pad_id: 2, center: [2.0, 3.0]}
+    - {pad_id: 3, center: [3.2, -2.0]}
+  wind:
+    type: sum
+    fields:
+      - {type: turbulent, mean: [0.0, 0.0, 0.0], sigma: 0.2, theta: 0.9}
+      # Air funnelling through the doorway, as it does between two rooms.
+      - type: wind_tunnel
+        velocity: [1.6, 0.0, 0.0]
+        lower: [-0.7, -0.9, -1.0]
+        upper: [0.7, 0.9, 3.0]
+
+drones:
+  - {name: tello-1, start: [-3.2, -3.0, 0.0]}
+
+script:
+  - all: takeoff
+  - all: "speed 50"
+  - all: "mon"
+  - {drone: tello-1, cmd: "up 40"}
+  # Line up on the doorway, which sits at y = 0 give or take 70 cm.
+  - {drone: tello-1, cmd: "go 0 340 0 50"}
+  - wait: 1.0
+  # Through it. The draught here is a tailwind.
+  - {drone: tello-1, cmd: "go 330 0 0 50"}
+  - wait: 1.0
+  # Into the far room and over its pad.
+  - {drone: tello-1, cmd: "go 100 200 0 50"}
+  - {drone: tello-1, cmd: "go 90 60 0 40"}
+  - {drone: tello-1, cmd: "down 40"}
+  - wait: 2.0
+  # Same route back. Now the draught is a headwind, and it costs more.
+  - {drone: tello-1, cmd: "up 40"}
+  - {drone: tello-1, cmd: "go -190 -260 0 50"}
+  - wait: 1.0
+  - {drone: tello-1, cmd: "go -330 0 0 50"}
+  - wait: 1.0
+  - {drone: tello-1, cmd: "go 0 -340 0 50"}
+  - all: land

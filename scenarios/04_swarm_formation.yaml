@@ -1,0 +1,45 @@
+name: swarm_formation
+description: >
+  Three drones hold a line abreast and fly the same route on identical orders.
+  The wind is deliberately not uniform: a 2 m/s draught covers only one side of
+  the room, so the drone that crosses it is pushed toward its neighbour while
+  the other two hold station. A gust that hits everyone equally would not do
+  this -- the formation would simply translate.
+
+  Watch the minimum separation in the run summary. No drone can detect the
+  problem alone: each believes it is holding position, and each is right. That
+  is precisely the case a coordination protocol has to handle, and the reason
+  the deciding information does not live inside any single agent.
+
+sim:
+  realtime: false
+  seed: 4
+
+world:
+  name: three drones, draught on one side only
+  bounds_lower: [-5.0, -5.0, 0.0]
+  bounds_upper: [5.0, 5.0, 3.0]
+  wind:
+    type: sum
+    fields:
+      - {type: turbulent, mean: [0.0, 0.0, 0.0], sigma: 0.25, theta: 0.9}
+      - type: wind_tunnel
+        velocity: [0.0, -2.0, 0.0]
+        lower: [-10.0, 0.4, -1.0]
+        upper: [10.0, 10.0, 5.0]
+
+drones:
+  - {name: tello-1, start: [0.0, -1.2, 0.0]}
+  - {name: tello-2, start: [0.0,  0.0, 0.0]}
+  - {name: tello-3, start: [0.0,  1.2, 0.0]}
+
+script:
+  - all: takeoff
+  - all: "speed 50"
+  - all: "up 50"
+  - wait: 3.0
+  - all: "forward 200"
+  - wait: 6.0
+  - all: "forward 150"
+  - wait: 3.0
+  - all: land

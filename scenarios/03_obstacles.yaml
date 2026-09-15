@@ -1,0 +1,40 @@
+name: obstacles
+description: >
+  A cluttered room: a table, a pillar and a low shelf. Flying over the table
+  changes what the downward sensor reads, which is worth seeing before any
+  policy is allowed to treat time-of-flight as altitude above the floor.
+
+sim:
+  realtime: false
+  seed: 3
+
+world:
+  name: cluttered lab
+  bounds_lower: [-3.0, -3.0, 0.0]
+  bounds_upper: [3.0, 3.0, 2.5]
+  obstacles:
+    - {type: box, lower: [0.4, -0.8, 0.0], upper: [1.6, 0.8, 0.75], name: table}
+    - {type: cylinder, center_xy: [-1.2, 1.0], radius: 0.2, z_min: 0.0, z_max: 2.5, name: pillar}
+    - {type: box, lower: [-2.9, -1.0, 0.0], upper: [-2.4, 1.0, 1.2], name: shelf}
+  mission_pads:
+    - {pad_id: 1, center: [1.0, -1.5]}
+    - {pad_id: 2, center: [-1.0, -1.5]}
+  wind:
+    type: turbulent
+    mean: [0.3, 0.0, 0.0]
+    sigma: 0.4
+    theta: 0.7
+
+drones:
+  - {name: tello-1, start: [-2.0, -2.0, 0.0]}
+
+script:
+  - all: takeoff
+  - {drone: tello-1, cmd: "up 60"}
+  - {drone: tello-1, cmd: "go 200 100 0 40"}
+  - wait: 1.0
+  - {drone: tello-1, cmd: "go 100 150 -30 40"}
+  - wait: 1.0
+  - {drone: tello-1, cmd: "ccw 180"}
+  - {drone: tello-1, cmd: "forward 150"}
+  - all: land

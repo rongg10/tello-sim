@@ -1,0 +1,82 @@
+
+  Drone on 127.0.0.1:8889 — the tkinter GUI can attach too:
+      python run_gui_sim.py --attach
+
+  Tello console   —  Tello, real djitellopy over UDP
+
+  room        furnished lab
+  3D view     http://127.0.0.1:8080/
+
+  Type help for every call with its units and limits,
+       demo for a first flight to copy,
+       state for telemetry, log for what you have sent,
+       quit to land and stop.
+
+  connect() has already been sent, so the drone is listening.
+  Start with:  takeoff()
+
+>>> get_battery()
+100
+>>> takeoff()
+  -> takeoff              ok            5.07s
+>>> move_forward(100)
+  -> forward 100          ok            3.84s
+>>> rotate_clockwise(90)
+  -> cw 90                ok            1.56s
+>>> forward 60
+  -> forward 60           ok            2.59s
+>>> move_up(50)
+  -> up 50                ok            2.28s
+>>> move_forward(5)
+  -> forward 5            error forward out of range 20..500 0.10s
+     djitellopy retries a refusal three more times before raising.
+  drone refused it: Command 'forward 5' was unsuccessful for 4 tries. Latest response:	'error forward out of range 20..500'
+>>> state
+
+  battery        94 %
+  height         143 cm
+  tof (below)    142 cm
+  barometer      5142.46 cm
+  yaw            -91 deg
+  pitch / roll   -2 / 9 deg
+  speed x/y/z    0 / 0 / 0 cm/s
+  flight time    34 s
+  mission pad    -1
+
+  This is what the drone reports. `where` is what is actually true.
+
+>>> where
+
+  true position   x -1.39 m   y +2.49 m   z 1.44 m
+  true yaw        -90.8 deg
+
+  The real drone cannot tell you this. Score runs with it; never fly on it.
+
+>>> go_xyz_speed(120, 60, 0, 50)
+  -> go 120 60 0 50       ok            3.21s
+>>> log
+
+    sim t  command                    answer               took
+      0.2  command                    ok                   0.11s
+     15.1  takeoff                    ok                   5.07s
+     22.2  forward 100                ok                   3.84s
+     27.2  cw 90                      ok                   1.56s
+     32.3  forward 60                 ok                   2.59s
+     38.0  up 50                      ok                   2.28s
+     40.9  forward 5                  error forward out of range 20..500 0.10s
+     41.0  forward 5                  error forward out of range 20..500 0.11s
+     41.1  forward 5                  error forward out of range 20..500 0.10s
+     60.3  go 120 60 0 50             ok                   3.21s
+
+  The same lines go to logs/<run>/commands.jsonl, in the same
+  format a real flight produces, so the two can be compared.
+
+>>> land()
+  -> land                 ok            4.04s
+>>> exit()
+
+[cli] stopping
+[cli] log written to logs/20260908-141612_console
+[cli] dashboard: logs/20260908-141612_console/dashboard.png
+
+[demo] console session finished in 83.3s

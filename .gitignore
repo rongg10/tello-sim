@@ -1,0 +1,26 @@
+# Virtual environments
+.venv/
+venv/
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Every flight writes one of these. Regenerate, do not publish.
+logs/
+
+# Raw screen-recording material: a throwaway Chrome profile and the
+# uncompressed .mov captures. ~366 MB, and none of it belongs in a repo.
+demos/.raw/
+
+# Produced by scripts/record_demos.py, kept locally only.
+demos/tello_controller_demo.mp4
+demos/tello_cli_demo.mp4
+
+# Not published: derived from running the team's own controller, which is
+# not part of this repository. See demos/README.md.
+demos/Demo_GUI.mp4
+demos/gui_controller_stdout.txt
+
+# macOS
+.DS_Store

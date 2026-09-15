@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tello Simulator</title>
+<style>
+  :root {
+    --bg: #0e1116;
+    --panel: rgba(18, 22, 30, 0.88);
+    --panel-solid: #12161e;
+    --line: #262d3a;
+    --text: #e6eaf2;
+    --muted: #8d97ab;
+    --accent: #4da3ff;
+    --good: #38c172;
+    --warn: #e0a33e;
+    --bad: #e05252;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: var(--bg); color: var(--text);
+    font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  #scene { position: fixed; inset: 0; }
+
+  .panel {
+    position: fixed;
+    background: var(--panel);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 12px 14px;
+    box-shadow: 0 10px 34px rgba(0,0,0,.45);
+  }
+
+  h2 {
+    margin: 0 0 9px;
+    font-size: 10.5px; font-weight: 650;
+    letter-spacing: .09em; text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  /* ---------------- telemetry ---------------- */
+
+  #hud { top: 14px; left: 14px; width: 232px; }
+
+  #hud .name {
+    font-size: 15px; font-weight: 620; margin-bottom: 2px;
+    display: flex; align-items: center; gap: 7px;
+  }
+  #hud .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  #hud .dot.flying { background: var(--good); box-shadow: 0 0 9px var(--good); }
+
+  .row {
+    display: flex; justify-content: space-between; gap: 10px;
+    font-family: var(--mono); font-size: 11.5px;
+    padding: 2.5px 0;
+  }
+  .row span:first-child { color: var(--muted); }
+  .row span:last-child { font-variant-numeric: tabular-nums; }
+
+  .bar {
+    height: 5px; border-radius: 3px; background: #222a36;
+    overflow: hidden; margin: 7px 0 3px;
+  }
+  .bar > i { display: block; height: 100%; background: var(--good); transition: width .3s, background .3s; }
+
+  .sep { height: 1px; background: var(--line); margin: 10px -14px; }
+
+  /* ---------------- controls ---------------- */
+
+  #controls { top: 14px; right: 14px; width: 250px; }
+
+  .btn {
+    appearance: none; border: 1px solid var(--line);
+    background: #1a2029; color: var(--text);
+    border-radius: 8px; padding: 8px 6px;
+    font: 600 12px/1 inherit; cursor: pointer;
+    transition: background .12s, border-color .12s, transform .05s;
+    user-select: none; -webkit-user-select: none;
+  }
+  .btn:hover:not(:disabled) { background: #232c39; border-color: #3a465a; }
+  .btn:active:not(:disabled) { transform: translateY(1px); }
+  .btn:disabled { opacity: .38; cursor: default; }
+  .btn.primary { background: #17406e; border-color: #2a5b96; }
+  .btn.primary:hover:not(:disabled) { background: #1d5390; }
+  .btn.danger { background: #5a1f1f; border-color: #7d2b2b; }
+  .btn.danger:hover:not(:disabled) { background: #712828; }
+  .btn.wide { grid-column: span 3; }
+  .btn kbd {
+    display: block; font: 500 9px var(--mono);
+    color: var(--muted); margin-top: 3px; letter-spacing: .04em;
+  }
+
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .grid2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+
+  label.slider {
+    display: block; margin: 9px 0 2px;
+    font-size: 11px; color: var(--muted);
+  }
+  label.slider b { color: var(--text); font-family: var(--mono); font-weight: 500; float: right; }
+  input[type=range] { width: 100%; accent-color: var(--accent); margin: 0; }
+
+  select {
+    width: 100%; background: #1a2029; color: var(--text);
+    border: 1px solid var(--line); border-radius: 7px;
+    padding: 6px 8px; font: inherit; font-size: 12px;
+  }
+
+  /* ---------------- log ---------------- */
+
+  #log {
+    bottom: 14px; left: 14px; width: 400px; max-height: 190px;
+    display: flex; flex-direction: column;
+  }
+  #logLines {
+    overflow-y: auto; font-family: var(--mono); font-size: 11px;
+    display: flex; flex-direction: column-reverse; gap: 1px;
+    /* min-height lets the box actually scroll instead of growing, and
+       flex-shrink:0 on the lines stops them being squashed to fit. */
+    flex: 1 1 auto; min-height: 0;
+  }
+  #logLines div {
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    flex: 0 0 auto; line-height: 1.5;
+  }
+  #logLines .t { color: #5c6678; }
+  #logLines .c { color: var(--text); }
+  #logLines .ok { color: var(--good); }
+  #logLines .err { color: var(--bad); }
+  #logLines .took { color: var(--muted); }
+  #logLines .empty { color: var(--muted); font-style: italic; }
+
+  /* ---------------- footer / camera ---------------- */
+
+  #cam { bottom: 14px; right: 14px; padding: 9px 11px; }
+  #cam .grid3 { width: 216px; }
+
+  #banner {
+    position: fixed; top: 14px; left: 50%; transform: translateX(-50%);
+    padding: 7px 15px; border-radius: 999px;
+    background: var(--panel); border: 1px solid var(--line);
+    font-size: 12px; color: var(--muted);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    white-space: nowrap;
+  }
+  #banner b { color: var(--text); font-weight: 600; }
+  #banner .warn { color: var(--warn); }
+
+  #offline {
+    position: fixed; inset: 0; display: none;
+    place-items: center; background: rgba(8,10,14,.9);
+    font-size: 15px; color: var(--muted); z-index: 50; text-align: center;
+  }
+  #offline.show { display: grid; }
+  #offline code { color: var(--text); font-family: var(--mono); font-size: 13px; }
+</style>
+</head>
+<body>
+  <div id="scene"></div>
+
+  <div class="panel" id="hud">
+    <div class="name"><span class="dot" id="statusDot"></span><span id="droneName">—</span></div>
+    <div class="row"><span>action</span><span id="mAction">—</span></div>
+    <div class="bar"><i id="battBar" style="width:100%"></i></div>
+    <div class="row"><span>battery</span><span id="mBatt">—</span></div>
+    <div class="sep"></div>
+    <div class="row"><span>height</span><span id="mHeight">—</span></div>
+    <div class="row"><span>ground clr</span><span id="mTof">—</span></div>
+    <div class="row"><span>speed</span><span id="mSpeed">—</span></div>
+    <div class="row"><span>heading</span><span id="mYaw">—</span></div>
+    <div class="row"><span>position</span><span id="mPos">—</span></div>
+    <div class="sep"></div>
+    <div class="row"><span>wind here</span><span id="mWind">—</span></div>
+    <div class="row"><span>mission pad</span><span id="mPad">—</span></div>
+    <div class="row" id="sepRow" style="display:none"><span>min sep</span><span id="mSep">—</span></div>
+  </div>
+
+  <div class="panel" id="controls">
+    <h2>Flight</h2>
+    <select id="droneSel" style="margin-bottom:8px; display:none"></select>
+    <div class="grid2" style="margin-bottom:6px">
+      <button class="btn primary" data-cmd="takeoff">Take off<kbd>T</kbd></button>
+      <button class="btn" data-cmd="land">Land<kbd>L</kbd></button>
+    </div>
+    <div class="grid3">
+      <button class="btn" data-move="ccw">⟲<kbd>Q</kbd></button>
+      <button class="btn" data-move="forward">▲<kbd>W</kbd></button>
+      <button class="btn" data-move="cw">⟳<kbd>E</kbd></button>
+      <button class="btn" data-move="left">◀<kbd>A</kbd></button>
+      <button class="btn" data-move="back">▼<kbd>S</kbd></button>
+      <button class="btn" data-move="right">▶<kbd>D</kbd></button>
+      <button class="btn" data-move="down">↓<kbd>F</kbd></button>
+      <button class="btn" data-cmd="stop">hold<kbd>space</kbd></button>
+      <button class="btn" data-move="up">↑<kbd>R</kbd></button>
+    </div>
+
+    <label class="slider">distance <b><span id="distVal">50</span> cm</b></label>
+    <input type="range" id="dist" min="20" max="300" step="10" value="50">
+    <label class="slider">rotation <b><span id="rotVal">45</span>°</b></label>
+    <input type="range" id="rot" min="15" max="180" step="15" value="45">
+    <label class="slider">speed <b><span id="spdVal">50</span> cm/s</b></label>
+    <input type="range" id="spd" min="10" max="100" step="10" value="50">
+
+    <div class="sep"></div>
+    <div class="grid2">
+      <button class="btn" data-cmd="flip f">Flip</button>
+      <button class="btn danger" data-cmd="emergency">Emergency</button>
+    </div>
+  </div>
+
+  <div class="panel" id="log">
+    <h2>Commands received by the drone</h2>
+    <div id="logLines"><div class="empty">nothing yet</div></div>
+  </div>
+
+  <div class="panel" id="cam">
+    <h2>Camera</h2>
+    <div class="grid3">
+      <button class="btn camBtn primary" data-cam="orbit">Orbit</button>
+      <button class="btn camBtn" data-cam="follow">Follow</button>
+      <button class="btn camBtn" data-cam="fpv">Drone</button>
+    </div>
+    <label class="slider">drone size <b><span id="scaleVal">2.0</span>×</b></label>
+    <input type="range" id="scale" min="1" max="4" step="0.5" value="2">
+  </div>
+
+  <div id="banner">—</div>
+
+  <div id="offline">
+    <div>
+      Lost the simulator.<br>
+      <code>python run_sim3d.py</code> is no longer running.
+    </div>
+  </div>
+
+  <script src="vendor/three.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

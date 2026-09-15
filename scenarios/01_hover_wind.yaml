@@ -1,0 +1,27 @@
+name: hover_wind
+description: >
+  Take off, hold position for half a minute in a steady 1.5 m/s draught, land.
+  The drone cannot hold exactly: it settles a fixed distance downwind, tilted
+  into the wind. That offset is the cleanest single measurement of how much
+  control authority is left, and it is what a position-hold assumption in a
+  navigation policy is quietly relying on.
+
+sim:
+  realtime: false
+  seed: 1
+
+world:
+  name: lab room, steady draught
+  bounds_lower: [-3.0, -3.0, 0.0]
+  bounds_upper: [3.0, 3.0, 2.5]
+  wind:
+    type: constant
+    velocity: [0.0, 1.5, 0.0]
+
+drones:
+  - {name: tello-1, start: [0.0, 0.0, 0.0]}
+
+script:
+  - all: takeoff
+  - wait: 30.0
+  - all: land

@@ -1,0 +1,35 @@
+name: gust_during_move
+description: >
+  A square patrol with a hard 3.5 m/s gust arriving 12 seconds in, mid-leg.
+  The gust is deterministic, so every controller under test meets it at the
+  same instant and the only variable is the response. Above roughly 2.5 m/s the
+  drone loses the argument with the air entirely, so this scenario crosses the
+  boundary between coping and being carried.
+
+sim:
+  realtime: false
+  seed: 2
+
+world:
+  name: lab room, gust at t=12s
+  bounds_lower: [-4.0, -4.0, 0.0]
+  bounds_upper: [4.0, 4.0, 2.5]
+  wind:
+    type: sum
+    fields:
+      - {type: turbulent, mean: [0.0, 0.0, 0.0], sigma: 0.25, theta: 0.8}
+      - {type: gust_burst, velocity: [0.0, 3.5, 0.0], start: 12.0, duration: 3.0}
+
+drones:
+  - {name: tello-1, start: [-1.0, -1.0, 0.0]}
+
+script:
+  - all: takeoff
+  - {drone: tello-1, cmd: "forward 200"}
+  - {drone: tello-1, cmd: "cw 90"}
+  - {drone: tello-1, cmd: "forward 200"}
+  - {drone: tello-1, cmd: "cw 90"}
+  - {drone: tello-1, cmd: "forward 200"}
+  - {drone: tello-1, cmd: "cw 90"}
+  - {drone: tello-1, cmd: "forward 200"}
+  - all: land
