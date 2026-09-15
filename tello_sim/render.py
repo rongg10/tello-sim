@@ -5,8 +5,8 @@ Two outputs, for two audiences:
     dashboard(run)  a single still image: the flight path, altitude, battery
                     and wind over time.  Good for a report, and it reads
                     correctly in print.
-    animate(run)    a video of the flight.  Good for the weekly meeting, where
-                    the question is usually "what did it actually do?".
+    animate(run)    a video of the flight.  Good whenever the question is
+                    "what did it actually do?".
 
 Everything is drawn from the recorded log, never from a live simulation, so the
 same code renders a real flight the moment its telemetry is in the same format.
@@ -394,6 +394,6 @@ def animate(
 
 
 def report(run, fps: int = 20) -> dict:
-    """Dashboard plus video in one call: the whole weekly deliverable."""
+    """Dashboard plus video in one call."""
     run = _as_run(run)
     return {"dashboard": dashboard(run), "video": animate(run, fps=fps)}

@@ -18,5 +18,6 @@ https://github.com/damiafuentes/DJITelloPy
 
 The tkinter controller that `run_gui_sim.py` and
 `scripts/demo_drive_controller.py` can launch is not part of this repository.
-It belongs to the project team and is not published here. Both scripts take a
-`--controller` path and explain what to do when they cannot find one.
+No such controller is published here. Both scripts take a `--controller` path,
+also settable as `TELLO_CONTROLLER`, and explain what to do when they cannot
+find one.

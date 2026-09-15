@@ -5,8 +5,8 @@
     python run_scenario.py scenarios/04_swarm_formation.yaml --video
     python run_scenario.py --all --video
 
-With --all this is the whole weekly deliverable in one command: every scenario
-flown, every log written, a dashboard for each and a video to show.
+With --all this is everything in one command: every scenario flown, every log
+written, a dashboard for each and a video to show.
 """
 
 from __future__ import annotations

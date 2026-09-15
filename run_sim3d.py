@@ -10,8 +10,8 @@ A browser window opens showing the room and the drone. Fly it from the buttons
 on the page, or with the keyboard (W A S D to move, R and F for height, Q and E
 to turn, T to take off, L to land).
 
-The UDP drone is running the whole time, so the team's tkinter controller can
-connect to 127.0.0.1 at the same time and you will see it fly in the 3D view.
+The UDP drone is running the whole time, so a tkinter controller can connect
+to 127.0.0.1 at the same time and you will see it fly in the 3D view.
 Both are ordinary clients; the drone does not care who is talking to it.
 """
 
@@ -92,7 +92,7 @@ def main() -> int:
     if server is not None:
         print(f"  Drone on: 127.0.0.1:{args.udp_port}   (use this IP in any Tello code)")
         print()
-        print("  To fly it from the team's GUI at the same time, in another terminal:")
+        print("  To fly it from a GUI controller at the same time, in another terminal:")
         print("      python run_gui_sim.py --attach")
     print()
     print("  Ctrl-C to stop.")

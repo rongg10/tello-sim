@@ -3,8 +3,8 @@
 The real drone is a UDP endpoint that reads plain-text commands on port 8889,
 answers `ok`, and shouts its state at port 8890 ten times a second.  That is the
 entire interface.  Reproduce it faithfully and every piece of existing flight
-code -- the team's tkinter controller, the notebooks, djitellopy itself -- runs
-against the simulator with no modification beyond typing a different IP address.
+code -- a tkinter controller, a notebook, djitellopy itself -- runs against
+the simulator with no modification beyond typing a different IP address.
 
 Running the two on one machine has one wrinkle: djitellopy binds port 8889
 locally as well as sending to it, so it would collide with this server.

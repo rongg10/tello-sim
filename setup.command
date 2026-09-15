@@ -1,29 +1,40 @@
 #!/bin/bash
-# Install the simulator's dependencies into the existing DJI environment.
-# Double-click from Finder, or run it from a terminal.
+# Install the simulator's dependencies. Double-click from Finder, or run it
+# from a terminal. Creates .venv alongside this script unless one already
+# exists, or unless a virtual environment is already active.
 cd "$(dirname "$0")"
 
-DJI="$HOME/.pyenv/versions/DJI"
-
-if [ ! -x "$DJI/bin/python" ]; then
-  echo "Could not find the DJI environment at:"
-  echo "    $DJI"
-  echo
-  echo "Either create it, or install into whatever Python you prefer with:"
-  echo "    pip install -r requirements.txt"
-  exit 1
+if [ -n "$VIRTUAL_ENV" ]; then
+  VENV="$VIRTUAL_ENV"
+  echo "Using the active environment at $VENV"
+else
+  VENV="$PWD/.venv"
+  if [ ! -x "$VENV/bin/python" ]; then
+    # Prefer a Python with tkinter so run_gui_sim.py works. On macOS the
+    # system Python has it; many pyenv and Homebrew builds do not.
+    BASE=python3
+    for candidate in /usr/bin/python3 python3; do
+      if "$candidate" -c "import tkinter" >/dev/null 2>&1; then BASE="$candidate"; break; fi
+    done
+    echo "Creating $VENV with $("$BASE" -V)"
+    "$BASE" -m venv "$VENV" || exit 1
+  fi
 fi
 
-echo "Installing into $("$DJI/bin/python" -V) at $DJI"
+echo "Installing into $("$VENV/bin/python" -V)"
 echo
-"$DJI/bin/pip" install -r requirements.txt || exit 1
+"$VENV/bin/pip" install -q --upgrade pip
+"$VENV/bin/pip" install -r requirements.txt || exit 1
 
 echo
 echo "Ready. To use it:"
-echo "    source $DJI/bin/activate"
+echo "    source $VENV/bin/activate"
 echo
 echo "  Live 3D view you can fly with buttons:"
 echo "      python run_sim3d.py --wind 1.5 --gusty"
+echo
+echo "  A prompt where you type the djitellopy API itself:"
+echo "      python run_cli.py"
 echo
 echo "  Start a simulated drone and point anything at 127.0.0.1:"
 echo "      python run_sim.py"
@@ -33,13 +44,13 @@ echo "      python run_scenario.py --all --video"
 echo
 
 # The GUI launcher needs tkinter. Say plainly whether this environment has it.
-if "$DJI/bin/python" -c "import tkinter" >/dev/null 2>&1; then
-  echo "  Fly the team's own tello_controller.py against it:"
-  echo "      python run_gui_sim.py --wind 1.5"
+if "$VENV/bin/python" -c "import tkinter" >/dev/null 2>&1; then
+  echo "  Fly your own tkinter controller against it:"
+  echo "      python run_gui_sim.py --controller /path/to/controller.py"
   echo
 else
   echo "Note: this environment has no tkinter, so run_gui_sim.py cannot start"
-  echo "here (nor can the team's tello_controller.py). Everything else works."
-  echo "Rebuild the environment on a Python built with Tk to get the GUI back."
+  echo "here. Everything else works. Rebuild the environment on a Python built"
+  echo "with Tk to get the GUI launcher back."
   echo
 fi

@@ -19,8 +19,8 @@ not a simulator dialect.  `help` prints every call with its units and limits,
 `help move_forward` explains one in detail, and raw SDK lines (`forward 100`)
 work too, which is worth doing once to see what the library actually sends.
 
-The buttons in the 3D view still work, and the team's tkinter controller can
-attach at the same time.  The drone does not care who is talking to it.
+The buttons in the 3D view still work, and a tkinter controller can attach at
+the same time.  The drone does not care who is talking to it.
 """
 
 from __future__ import annotations

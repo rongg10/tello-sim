@@ -6,9 +6,9 @@
     python run_sim.py --wind 1.0 --gusty       draught plus turbulence
     python run_sim.py --scenario scenarios/03_obstacles.yaml
 
-Then point any existing Tello code at 127.0.0.1 instead of 192.168.10.1.  The
-team's tkinter controller already has an IP field, so nothing needs editing --
-or run `python run_gui_sim.py` to launch it pre-pointed at the simulator.
+Then point any existing Tello code at 127.0.0.1 instead of 192.168.10.1.  Most
+tkinter controllers already have an IP field, so nothing needs editing -- or
+run `python run_gui_sim.py --controller ...` to launch one pre-pointed here.
 
 Every command the simulated drone receives is printed here and written to
 logs/<timestamp>_<name>/commands.jsonl.

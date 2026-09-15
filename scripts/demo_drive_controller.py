@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""Fly the team's tkinter controller by pressing its own buttons, on a script.
+"""Fly a tkinter controller by pressing its own buttons, on a script.
 
-This is the recording harness for the controller demo video.  It launches
-`tello_controller.py` -- the real file -- against a simulator that is already
-running, then presses the buttons in order with `invoke()`, showing each one
-pressed as it goes.  Nothing about the controller is modified: the presses are
-the presses a hand would make, so the flight in the 3D view is the flight the
-GUI actually produces.
+This is the recording harness for the controller demo video.  It launches the
+controller -- the real file -- against a simulator that is already running,
+then presses the buttons in order with `invoke()`, showing each one pressed as
+it goes.  Nothing about the controller is modified: the presses are the presses
+a hand would make, so the flight in the 3D view is the flight the GUI actually
+produces.
 
-    python scripts/demo_drive_controller.py --captions out/captions.json
+No controller ships with this project, and the button names below are those of
+the one this was written against, so expect to adapt `STEPS` to your own.
+
+    python scripts/demo_drive_controller.py --controller /path/to/controller.py
 
 It expects a simulator on 127.0.0.1:8889 -- start one with run_sim3d.py.
 """
@@ -25,12 +28,22 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(HERE))
 
-CONTROLLER = (
-    HERE.parent / "Existing Work From the Group" / "tello_mac_controller" / "tello_controller.py"
-)
+def default_controller() -> "Path | None":
+    """Same resolution as run_gui_sim.py: TELLO_CONTROLLER, then next to us."""
+    from os import environ
+
+    if environ.get("TELLO_CONTROLLER"):
+        return Path(environ["TELLO_CONTROLLER"]).expanduser()
+    local = HERE / "tello_controller.py"
+    return local if local.exists() else None
 
 
 def load_controller(path: Path):
+    if path is None or not path.exists():
+        raise SystemExit(
+            "No controller found. Pass one with --controller /path/to/controller.py,\n"
+            "or set TELLO_CONTROLLER. This project ships no GUI controller."
+        )
     spec = importlib.util.spec_from_file_location("tello_controller", path)
     module = importlib.util.module_from_spec(spec)
     sys.modules["tello_controller"] = module
@@ -138,7 +151,7 @@ def build_steps(app):
         return apply
 
     return [
-        {"caption": "The team's own controller — the same file that flies the real Tello",
+        {"caption": "An unmodified controller — the same file that flies the real Tello",
          "pause": 2.5},
         {"caption": "Only the IP changed: 127.0.0.1 instead of 192.168.10.1",
          "pause": 2.5},
@@ -176,7 +189,7 @@ def build_steps(app):
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--controller", type=Path, default=CONTROLLER)
+    parser.add_argument("--controller", type=Path, default=default_controller())
     parser.add_argument("--geometry", default="746x876+762+30")
     parser.add_argument("--captions", type=Path)
     parser.add_argument("--start-delay", type=float, default=1.5)

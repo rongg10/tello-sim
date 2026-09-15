@@ -10,8 +10,9 @@ want, none of which the real one gives you for free.
 ## See it fly
 
 The console on the right is the real `djitellopy` API, typed at a prompt. The
-3D view on the left is the same drone, flying the commands as they land. Both
-are live: nothing here is staged or sped up beyond the playback rate.
+3D view on the left is the same drone, flying the commands as they land.
+Nothing is staged: the typing, the timings and the refusals are the real
+program's own, and the only edit is playback speed.
 
 ![The console and the 3D view, side by side](demos/preview/cli_demo.gif)
 
@@ -56,29 +57,16 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-One caveat: `run_gui_sim.py` needs a Python built with tkinter, which several
-pyenv and Homebrew builds are not. On macOS, `/usr/bin/python3 -m venv .venv`
-is the reliable choice. Nothing else here needs tkinter.
+On macOS you can double-click `setup.command` from Finder instead, which does
+the same thing and then prints what to run next.
 
-On the machine this was developed on there is an existing **DJI** environment,
-and `setup.command` reuses it rather than creating a new one:
+One caveat, and only for `run_gui_sim.py`: it needs a Python built with tkinter,
+which many pyenv and Homebrew builds are not. If `import tkinter` fails, rebuild
+the environment on a Python that has it. On macOS, `/usr/bin/python3 -m venv`
+is the dependable choice. Nothing else in the project needs tkinter.
 
-```bash
-cd tello_sim && ./setup.command
-```
-
-Then, in every new terminal:
-
-```bash
-source ~/.pyenv/versions/DJI/bin/activate
-```
-
-(`pyenv activate DJI` does not work on this machine — pyenv-virtualenv is not
-loaded — but the `activate` script above does.)
-
-Everything runs in that one environment: the 3D view, the UDP drone, the team's
-tkinter controller, scenarios, dashboards and videos. Verified on Python 3.13.12
-with Tk 9.0, and the physics is byte-identical to the 3.9 and 3.12 runs.
+Verified on Python 3.9, 3.12 and 3.13, and the physics is byte-identical across
+all three.
 
 ---
 
@@ -225,20 +213,18 @@ and no sockets, and gives you `swarm` alongside `drones[0]` .. `drones[N-1]`.
 A flight built at the prompt is a flight script: paste the lines into a `.py`
 file, change `127.0.0.1` back to `192.168.10.1`, and it flies the real drone.
 
-### 3. Fly the team's existing GUI against it
+### 3. Point an existing GUI controller at it
 
 ```bash
 python run_gui_sim.py --wind 1.5           # starts its own simulator
 python run_gui_sim.py --attach             # joins one that run_sim3d.py is running
 ```
 
-This launches `tello_controller.py` — the actual file, not a copy — with the IP
+This imports your controller — the actual file, not a copy — with the IP
 already set to `127.0.0.1`. Press **Connect** and fly. Every command is printed
 and logged.
 
-**That controller is not part of this repository.** It belongs to the project
-team and is published separately or not at all, so `run_gui_sim.py` will not
-find it in a fresh clone. It takes any tkinter Tello controller you point it at:
+No such controller ships with this repository, so pass the path to your own:
 
 ```bash
 python run_gui_sim.py --controller /path/to/your_controller.py
@@ -351,7 +337,7 @@ drops you into the apartment with the buttons.
 
 ```bash
 python run_scenario.py scenarios/02_gust_during_move.yaml --video
-python run_scenario.py --all --video          # the whole weekly deliverable
+python run_scenario.py --all --video          # every scenario, start to finish
 ```
 
 ```bash
@@ -499,8 +485,7 @@ PyBullet would have been the obvious choice and was tried first. It has no
 prebuilt wheel for Apple silicon, so it compiles from source, and its window
 insists on owning the main thread, which collides with tkinter. A page served
 over localhost needs nothing compiled, has no window-manager fights, renders
-well, and can be shown on someone else's laptop or screen-recorded for a
-meeting. three.js is vendored in `viewer/vendor/`, so it works with no
+well, and can be shown on someone else's laptop or screen-recorded. three.js is vendored in `viewer/vendor/`, so it works with no
 internet.
 
 ---

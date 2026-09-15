@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-"""Launch the team's existing tkinter controller against the simulator.
+"""Launch an existing tkinter Tello controller against the simulator.
 
-    python run_gui_sim.py
+    python run_gui_sim.py --controller /path/to/controller.py
 
 This starts a simulated drone, patches djitellopy so it can share this machine
-with it, and then runs tello_controller.py exactly as written -- not a copy, not
-a modified version, the same file that flies the real drone.  Click Connect and
+with it, and then runs your controller exactly as written -- not a copy, not a
+modified version, the same file that flies the real drone.  Click Connect and
 fly.  The IP is filled in as 127.0.0.1 for you.
+
+No controller ships with this project.  Point it at your own, either with
+--controller or by setting TELLO_CONTROLLER in the environment.
 
 If the GUI works here and fails on the real Tello, the difference is the drone
 or the network, not the code.  That is the whole point.
@@ -22,17 +25,25 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-DEFAULT_CONTROLLER = (
-    HERE.parent / "Existing Work From the Group" / "tello_mac_controller" / "tello_controller.py"
-)
+def default_controller() -> Path | None:
+    """Where to look for a controller when --controller is not given.
+
+    An env var first, so a checkout can be pointed at a controller kept
+    outside it, then the obvious spot next to this file.
+    """
+    from os import environ
+
+    if environ.get("TELLO_CONTROLLER"):
+        return Path(environ["TELLO_CONTROLLER"]).expanduser()
+    local = HERE / "tello_controller.py"
+    return local if local.exists() else None
 
 
 def require_tkinter() -> None:
     """The GUI needs a Python built with Tk. Say so clearly if this one is not.
 
     A pyenv or Homebrew Python is often built without it, and the failure is an
-    obscure ImportError about `_tkinter`. The DJI environment does have it, so
-    this almost always means the wrong interpreter is active.
+    obscure ImportError about `_tkinter`.
     """
     try:
         import tkinter  # noqa: F401
@@ -40,19 +51,28 @@ def require_tkinter() -> None:
         raise SystemExit(
             "This Python has no tkinter, so the GUI cannot start.\n"
             f"  interpreter: {sys.executable}\n\n"
-            "The DJI environment has tkinter, so this is probably the wrong\n"
-            "interpreter. Activate it and try again:\n\n"
-            "    source ~/.pyenv/versions/DJI/bin/activate\n\n"
+            "Rebuild the environment on a Python built with Tk. On macOS the\n"
+            "system Python has it:\n\n"
+            "    /usr/bin/python3 -m venv .venv && source .venv/bin/activate\n"
+            "    pip install -r requirements.txt\n\n"
             "Everything else (run_sim3d.py, run_sim.py, run_scenario.py, the demo\n"
             "scripts) works on any Python 3.9 or newer, tkinter or not."
         )
 
 
 def load_controller(path: Path):
+    if path is None:
+        raise SystemExit(
+            "No controller given, and none found.\n\n"
+            "This project ships no GUI controller. Point it at your own:\n"
+            "    python run_gui_sim.py --controller /path/to/controller.py\n\n"
+            "or set TELLO_CONTROLLER in the environment. Any tkinter program\n"
+            "that drives djitellopy will do."
+        )
     if not path.exists():
         raise SystemExit(
             f"Could not find the controller at:\n  {path}\n"
-            "Pass its location with --controller /path/to/tello_controller.py"
+            "Pass its location with --controller /path/to/controller.py"
         )
     spec = importlib.util.spec_from_file_location("tello_controller", path)
     module = importlib.util.module_from_spec(spec)
@@ -89,7 +109,7 @@ def run_attached(args) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--controller", type=Path, default=DEFAULT_CONTROLLER)
+    parser.add_argument("--controller", type=Path, default=default_controller())
     parser.add_argument("--wind", type=float, default=0.0, help="steady wind speed in m/s")
     parser.add_argument("--gusty", action="store_true")
     parser.add_argument("--scenario", type=Path, help="take the world from a scenario file")

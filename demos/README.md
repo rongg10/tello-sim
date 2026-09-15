@@ -10,11 +10,11 @@ Two ways of flying the simulated Tello, each flown for real and recorded.
 Both flew in the furnished lab with a 1.0 m/s draught and turbulence, against a
 simulated drone speaking real SDK over real UDP on 127.0.0.1.
 
-The controller in the first row is the project team's own program and is not
-part of this repository, so that flight cannot be reproduced from a fresh clone
-as written. Its artefacts are kept because they are the simulator's output, not
-the controller's: a command log and a rendered flight. Point
-`--controller` at any tkinter Tello controller to fly the same path yourself.
+No GUI controller ships with this project, so the first row cannot be
+reproduced from a fresh clone exactly as flown. Its artefacts are kept because
+they are the simulator's own output, not the controller's: a command log and a
+rendered flight. Point `--controller` at any tkinter Tello controller to fly
+the same path yourself.
 
 The `.mp4`s here are the **simulator's own render of the flight** — the room, the
 path, altitude, battery and wind. They show what the drone did, not what the

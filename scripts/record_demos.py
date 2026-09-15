@@ -6,8 +6,9 @@
     python scripts/record_demos.py controller just the GUI one
 
 Nothing is staged.  Each video is a screen recording of the real programs --
-the team's `tello_controller.py`, or `run_cli.py` -- flying a real simulated
-drone, with the 3D view open beside them.  The button presses and the typing
+a tkinter controller, or `run_cli.py` -- flying a real simulated drone, with
+the 3D view open beside them.  The controller half needs a controller of your
+own; see scripts/demo_drive_controller.py.  The button presses and the typing
 come from the driver scripts next to this one, so the flight is repeatable and
 the pacing is the drone's.
 
@@ -418,7 +419,7 @@ def record_cli(args) -> Path:
 
 
 def record_controller(args) -> Path:
-    """The team's tkinter controller, pressing its own buttons, in the 3D view."""
+    """A tkinter controller, pressing its own buttons, in the 3D view."""
     check_display()
     free_ports()
     screen_w, _ = screen_size()
@@ -469,7 +470,7 @@ def record_controller(args) -> Path:
     return build_video(
         raw, captions, started, OUT / "tello_controller_demo.mp4",
         "Flying the Tello from the GUI controller",
-        "tello_controller.py  —  unmodified, pointed at the simulator",
+        "A GUI controller  —  unmodified, pointed at the simulator",
         "Tello simulator  ·  real UDP on 127.0.0.1  ·  furnished lab, 1.0 m/s wind",
         target_width=args.width,
     )
@@ -480,7 +481,7 @@ def main() -> int:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("which", nargs="?", default="both",
                         choices=["both", "cli", "controller"])
-    parser.add_argument("--venv", default=str(Path.home() / ".pyenv/versions/DJI"))
+    parser.add_argument("--venv", default=os.environ.get("VIRTUAL_ENV", str(Path(__file__).resolve().parent.parent / ".venv")))
     parser.add_argument("--python", default=sys.executable)
     parser.add_argument("--top", type=int, default=30)
     parser.add_argument("--bottom", type=int, default=906)
