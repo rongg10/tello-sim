@@ -27,7 +27,15 @@ PAD_MAX_HEIGHT = DroneSpec().pad_detect_max_height
 
 
 def overlaps(obstacle, point: np.ndarray, radius: float) -> bool:
-    return obstacle.penetration(np.asarray(point, dtype=float), radius) is not None
+    """Would a drone of this radius, centred here, be inside the obstacle?
+
+    Obstacles no longer carry their own penetration test: MuJoCo resolves
+    contacts now, so the only geometry left in `world.py` is what the sensors
+    need.  `distance_to` is that geometry, and it answers this question as well.
+    """
+    from tello_sim.world import World
+
+    return World.distance_to(obstacle, np.asarray(point, dtype=float)) < radius
 
 
 def covers_floor_at(obstacle, xy: np.ndarray) -> bool:

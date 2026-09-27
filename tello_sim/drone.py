@@ -18,7 +18,7 @@ import numpy as np
 
 from . import actions as act
 from .config import DroneSpec
-from .dynamics import DroneState, body_to_world, drain_battery, integrate, world_to_body
+from .dynamics import DroneState, body_to_world, drain_battery, world_to_body
 
 CM = 0.01
 OK = "ok"
@@ -95,7 +95,11 @@ class SimDrone:
             yaw=float(np.deg2rad(start_yaw_deg)),
             battery=self.spec.battery_start,
         )
+        # Where `height?` is measured from. Lifted to the airframe's resting
+        # height so a drone sitting on the floor reports zero, the way the real
+        # one does, rather than the two centimetres its centre actually is up.
         self.home = self.state.position.copy()
+        self.home[2] = max(float(self.home[2]), self.spec.body_half_height)
 
         self.sdk_mode = False
         self.mission_pads_enabled = False
@@ -125,6 +129,8 @@ class SimDrone:
         # Which surfaces are being touched right now, so a drone resting
         # against a wall logs one collision rather than one per tick.
         self._active_hits: set[str] = set()
+        # When each surface was last in contact, for the debounce above.
+        self._hit_times: dict[str, float] = {}
 
     # ------------------------------------------------------------------
     # Command entry point (called from network or script threads)
@@ -422,7 +428,14 @@ class SimDrone:
     # Simulation step (simulation thread only)
     # ------------------------------------------------------------------
 
-    def step(self, dt: float, sim_time: float, world) -> None:
+    def plan(self, dt: float, sim_time: float, world) -> tuple[np.ndarray, float]:
+        """Decide what the flight controller wants, before the engine runs.
+
+        Split out from the bookkeeping because MuJoCo needs every drone's
+        command in hand before it steps any of them: the drones share one
+        solver, so they have to be advanced together or a swarm's contacts
+        depend on the order the list happened to be in.
+        """
         self.sim_time = sim_time
 
         self._service_queues(world)
@@ -442,33 +455,38 @@ class SimDrone:
             accel = np.zeros(3)
             yaw_rate = 0.0
 
-        wind = world.wind_at(self.state.position, sim_time)
-        resting = (
-            not self.state.motors_on
-            and self.state.position[2] <= self.spec.ground_clearance + 1e-3
-        )
-        integrate(self.state, self.spec, accel, yaw_rate, wind, dt, resting=resting)
+        self._pending_done = (done, error)
+        # Speed before the solver gets a say. A touchdown at landing speed is not
+        # a collision, a fall is, and afterwards the floor has already removed
+        # the evidence.
+        self._impact_speed = float(np.linalg.norm(self.state.velocity))
+        return accel, yaw_rate
+
+    def settle(self, dt: float, sim_time: float, world, hits) -> None:
+        """Bookkeeping for the step the engine has just taken."""
         drain_battery(self.state, self.spec, dt)
 
-        # Remember how hard it was travelling before the floor stopped it: a
-        # touchdown at landing speed is not a collision, a fall is.
-        impact_speed = float(np.linalg.norm(self.state.velocity))
-
-        position, velocity, hits = world.resolve_collisions(
-            self.state.position,
-            self.state.velocity,
-            self.spec.radius,
-            self.spec.ground_clearance,
-        )
-        self.state.position, self.state.velocity = position, velocity
-
+        # The floor is touched on every landing and on every takeoff roll, so it
+        # only counts as a collision if the drone arrived at it quickly.
         current_hits = {
             hit for hit in hits
-            if hit != "bound_z_min" or impact_speed > 0.5
+            if hit != "floor" or self._impact_speed > 0.5
         }
+
+        # Debounce. A drone scraping along a wall makes and breaks contact many
+        # times a second as the solver pushes it off and the controller pushes
+        # it back, and counting each of those as a separate collision turned one
+        # scrape down a corridor into a hundred and five of them. A surface has
+        # to come clear for `collision_cooldown` before it can count again.
         for hit in current_hits - self._active_hits:
+            last = self._hit_times.get(hit)
+            if last is not None and sim_time - last < self.spec.collision_cooldown:
+                continue
+            self._hit_times[hit] = sim_time
             self.collisions.append((sim_time, hit))
             self.events.append((sim_time, f"collision with {hit}"))
+        for hit in current_hits:
+            self._hit_times[hit] = sim_time
         self._active_hits = current_hits
 
         if self.mission_pads_enabled:
@@ -478,12 +496,16 @@ class SimDrone:
 
         self._check_battery(sim_time)
 
+        done, error = self._pending_done
         if done and self._current is not None:
             self._current.complete(error or OK, sim_time)
             self._current = None
             if error:
                 self.events.append((sim_time, f"command failed: {error}"))
             self._start_action(act.Hover() if self.state.airborne else act.Grounded())
+
+    _pending_done: tuple = (False, None)
+    _impact_speed: float = 0.0
 
     def _service_queues(self, world) -> None:
         """Start the next command, letting preemptive ones cut in."""

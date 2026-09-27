@@ -62,3 +62,10 @@ script:
   - {drone: tello-1, cmd: "forward 250"}
   - wait: 2.0
   - all: land
+
+benchmark:
+  name: cross the room with a gust coming through the window
+  # The route doubles back: the last leg is 2.5 m on a bearing of -135 deg.
+  goal: [-0.27, 0.73, 1.25]
+  success_radius: 0.5
+  time_limit: 75

@@ -48,3 +48,10 @@ script:
   - {drone: tello-1, cmd: "go 150 70 0 50"}
   - wait: 1.0
   - all: land
+
+benchmark:
+  name: weave the pillars and reach the far wall
+  # Six legs of 1.5 m from x=-4.5; the lateral offsets cancel out.
+  goal: [4.5, 0.0, 0.8]
+  success_radius: 0.5
+  time_limit: 60

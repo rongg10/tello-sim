@@ -255,6 +255,60 @@ function makeLabel(text, colour, position) {
   return sprite;
 }
 
+// Meshes for obstacles that can move, keyed by name. Rebuilt with the world.
+const movingObstacles = new Map();
+
+function obstacleOrigin(o) {
+  // The point the server reports a pose about. For a door that is its hinge,
+  // which is not where the panel's middle is; for everything else the two
+  // coincide. Returned in viewer axes (x, z, -y).
+  const motion = o.motion || {};
+  if (motion.type === 'swing' && motion.pivot) {
+    const [px, py, pz] = motion.pivot;
+    return new THREE.Vector3(px, pz, -py);
+  }
+  if (o.type === 'box') {
+    const [x0, y0, z0] = o.lower, [x1, y1, z1] = o.upper;
+    return new THREE.Vector3((x0 + x1) / 2, (z0 + z1) / 2, -(y0 + y1) / 2);
+  }
+  if (o.type === 'cylinder') {
+    return new THREE.Vector3(o.center_xy[0], (o.z_min + o.z_max) / 2, -o.center_xy[1]);
+  }
+  return new THREE.Vector3(o.center[0], o.center[2], -o.center[1]);
+}
+
+function applyObstacleStates(list) {
+  for (const o of list || []) {
+    const entry = movingObstacles.get(o.name);
+    if (!entry) continue;
+
+    // Full orientation, so a knocked-over block visibly tumbles instead of
+    // dropping to the floor upright. Sim axes (x, y, z) are viewer axes
+    // (x, z, -y). That mapping is a proper rotation, so a quaternion's vector
+    // part converts exactly the way an ordinary vector does. Without a
+    // quaternion, fall back to heading alone: sim yaw about +z is a viewer
+    // rotation about +Y by the same angle.
+    let q;
+    if (o.quat) {
+      const [w, qx, qy, qz] = o.quat;
+      q = new THREE.Quaternion(qx, qz, -qy, w);
+    } else {
+      const yaw = (o.yaw_deg || 0) * Math.PI / 180;
+      q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+    }
+    const local = entry.offset.clone().sub(entry.origin).applyQuaternion(q);
+
+    const x = o.p[0] + local.x;
+    const y = o.p[2] + local.y;
+    const z = -o.p[1] + local.z;
+
+    entry.mesh.position.set(x, y, z);
+    entry.mesh.quaternion.copy(q);
+    entry.outline.position.set(x, y, z);
+    entry.outline.quaternion.copy(q);
+  }
+}
+
 function buildWorld(payload) {
   const world = payload.world;
   const lo = world.bounds_lower, hi = world.bounds_upper;
@@ -326,18 +380,39 @@ function buildWorld(payload) {
 
   // Obstacles.
   const obstacleMat = new THREE.MeshStandardMaterial({ color: 0x39424f, roughness: 0.85 });
+  // Anything that can move is tinted warm, so it is obvious at a glance which
+  // parts of the room are going to be where you left them.
+  const movingMat = new THREE.MeshStandardMaterial({ color: 0x7a5636, roughness: 0.8 });
+  movingObstacles.clear();
+
   for (const o of world.obstacles || []) {
     let mesh;
+    const moving = o.motion_kind && o.motion_kind !== 'static';
+    // Movable things take the colour the scenario gave them, so five blocks
+    // scattered across the floor can still be told apart. Static geometry
+    // keeps one colour so the room reads as a room. The colour goes in as a
+    // hex value because three.js treats hex as sRGB, which is what a person
+    // typing [0.85, 0.35, 0.30] into a scenario file means.
+    let mat = moving ? movingMat : obstacleMat;
+    let edge = moving ? 0xb08040 : 0x5a6a80;
+    if (moving && Array.isArray(o.rgba)) {
+      const [r, g, b] = o.rgba.map((v) => Math.max(0, Math.min(255, Math.round(v * 255))));
+      const hex = (r << 16) | (g << 8) | b;
+      mat = new THREE.MeshStandardMaterial({ color: hex, roughness: 0.8 });
+      edge = new THREE.Color(hex).multiplyScalar(0.55).getHex();
+    }
+
     if (o.type === 'box') {
       const [x0, y0, z0] = o.lower, [x1, y1, z1] = o.upper;
-      mesh = new THREE.Mesh(
-        new THREE.BoxGeometry(x1 - x0, z1 - z0, y1 - y0), obstacleMat,
-      );
+      mesh = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, z1 - z0, y1 - y0), mat);
       mesh.position.set((x0 + x1) / 2, (z0 + z1) / 2, -(y0 + y1) / 2);
     } else if (o.type === 'cylinder') {
       const h = o.z_max - o.z_min;
-      mesh = new THREE.Mesh(new THREE.CylinderGeometry(o.radius, o.radius, h, 24), obstacleMat);
+      mesh = new THREE.Mesh(new THREE.CylinderGeometry(o.radius, o.radius, h, 24), mat);
       mesh.position.set(o.center_xy[0], o.z_min + h / 2, -o.center_xy[1]);
+    } else if (o.type === 'sphere') {
+      mesh = new THREE.Mesh(new THREE.SphereGeometry(o.radius, 20, 14), mat);
+      mesh.position.set(o.center[0], o.center[2], -o.center[1]);
     }
     if (!mesh) continue;
     mesh.castShadow = true;
@@ -349,11 +424,23 @@ function buildWorld(payload) {
     // they must be copied into, never assigned over.
     const outline = new THREE.LineSegments(
       new THREE.EdgesGeometry(mesh.geometry),
-      new THREE.LineBasicMaterial({ color: 0x5a6a80 }),
+      new THREE.LineBasicMaterial({ color: edge }),
     );
     outline.position.copy(mesh.position);
     outline.rotation.copy(mesh.rotation);
     group.add(outline);
+
+    if (moving) {
+      // A swinging door turns about its hinge, not its middle, so the mesh is
+      // parented to a pivot placed at the body origin the server reports. The
+      // offset below is the panel's position relative to that pivot.
+      movingObstacles.set(o.name, {
+        mesh,
+        outline,
+        offset: mesh.position.clone(),
+        origin: obstacleOrigin(o),
+      });
+    }
   }
 
   // Mission pads, with their numbers painted on.
@@ -611,6 +698,7 @@ async function poll() {
       document.getElementById('offline').classList.remove('show');
 
       payload.drones.forEach((d, i) => { if (views[i]) applyDroneState(views[i], d); });
+      applyObstacleStates(payload.obstacles);
       updateWind(payload.wind || []);
       updateHud(payload);
       updateLog(payload.log || []);

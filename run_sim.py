@@ -116,7 +116,9 @@ def starting_points(args, world, count: int) -> list:
     for index, (position, _) in enumerate(places):
         point = np.asarray(position, dtype=float)
         for obstacle in world.obstacles:
-            if obstacle.penetration(point, radius) is not None:
+            # Obstacles stopped carrying their own penetration test when MuJoCo
+            # took over contacts; `distance_to` is the geometry that remained.
+            if world_module.World.distance_to(obstacle, point) < radius:
                 print(
                     f"[sim] warning: tello-{index + 1} starts inside "
                     f"'{obstacle.name}' at {position}"
@@ -172,6 +174,10 @@ def main() -> int:
     )
     parser.add_argument("--list", action="store_true", help="list the scenarios and exit")
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--no-collisions", action="store_true",
+        help="drones pass through walls, obstacles and each other (the floor still holds them)",
+    )
     parser.add_argument("--port", type=int, default=8889, help="command port")
     parser.add_argument("--no-log", action="store_true", help="do not write a run log")
     parser.add_argument("--quiet", action="store_true", help="do not print each command")
@@ -184,7 +190,9 @@ def main() -> int:
     recorder = Recorder("live", enabled=not args.no_log)
     simulator = Simulator(
         world=world,
-        sim_spec=SimSpec(realtime=True, seed=args.seed),
+        sim_spec=SimSpec(
+            realtime=True, seed=args.seed, collisions=not args.no_collisions
+        ),
         recorder=recorder if not args.no_log else None,
     )
 

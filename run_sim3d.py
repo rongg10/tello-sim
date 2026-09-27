@@ -50,6 +50,10 @@ def main() -> int:
     )
     parser.add_argument("--list", action="store_true", help="list the scenarios and exit")
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--no-collisions", action="store_true",
+        help="drones pass through walls, obstacles and each other (the floor still holds them)",
+    )
     parser.add_argument("--port", type=int, default=8080, help="port for the 3D view")
     parser.add_argument("--udp-port", type=int, default=8889, help="drone command port")
     parser.add_argument("--no-udp", action="store_true", help="3D view only, no network drone")
@@ -65,7 +69,9 @@ def main() -> int:
     recorder = Recorder("live3d", enabled=not args.no_log)
     simulator = Simulator(
         world=world,
-        sim_spec=SimSpec(realtime=True, seed=args.seed),
+        sim_spec=SimSpec(
+            realtime=True, seed=args.seed, collisions=not args.no_collisions
+        ),
         recorder=None if args.no_log else recorder,
     )
 

@@ -35,6 +35,10 @@ class Scenario:
     drones: list = field(default_factory=list)
     drone_spec: dict = field(default_factory=dict)
     script: list = field(default_factory=list)
+    # Optional. What counts as doing this scenario well: a goal, a radius
+    # and a deadline. A scenario without one is still flyable, it just
+    # cannot be scored. See benchmark.py.
+    benchmark: dict = field(default_factory=dict)
     source: Path | None = None
 
     # ------------------------------------------------------------------
@@ -51,6 +55,7 @@ class Scenario:
             drones=data.get("drones", []) or [],
             drone_spec=data.get("drone_spec", {}) or {},
             script=data.get("script", []) or [],
+            benchmark=data.get("benchmark", {}) or {},
             source=path,
         )
 
@@ -63,6 +68,7 @@ class Scenario:
             "drones": self.drones,
             "drone_spec": self.drone_spec,
             "script": self.script,
+            "benchmark": self.benchmark,
             "source": str(self.source) if self.source else None,
         }
 

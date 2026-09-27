@@ -9,6 +9,9 @@ Files written per run, under logs/<timestamp>_<name>/:
 
     commands.jsonl   what was asked, what was answered, and how long it took
     telemetry.csv    position, velocity, battery and wind, ten times a second
+    obstacles.jsonl  where the movable obstacles were, at the same rate. Only
+                     written when the scenario actually contains something that
+                     moves.
     events.jsonl     collisions, timeouts, battery warnings
     run.json         the scenario and every constant used, for reproducibility
 """
@@ -62,6 +65,10 @@ class Recorder:
         self._telemetry_file = (self.directory / "telemetry.csv").open("w", newline="", encoding="utf-8")
         self._telemetry = csv.DictWriter(self._telemetry_file, fieldnames=TELEMETRY_COLUMNS)
         self._telemetry.writeheader()
+
+        # Opened lazily: most scenarios have nothing that moves, and an empty
+        # file in every run directory invites the question of why it is empty.
+        self._obstacles = None
         self._closed = False
 
     # -- writing -----------------------------------------------------------
@@ -96,6 +103,25 @@ class Recorder:
         with self._write_lock:
             self._telemetry.writerow({k: snapshot.get(k) for k in TELEMETRY_COLUMNS})
 
+    def log_obstacles(self, sim_time: float, poses: list) -> None:
+        """Record where the movable obstacles are, at the telemetry rate.
+
+        Without this a video of a scenario with a swinging door shows the door
+        frozen where the scenario file first put it, which is not a small
+        cosmetic problem: it is a recording that disagrees with the flight it
+        claims to show.
+        """
+        if not self.enabled or not poses:
+            return
+        with self._write_lock:
+            if self._obstacles is None:
+                self._obstacles = (
+                    self.directory / "obstacles.jsonl"
+                ).open("w", encoding="utf-8")
+            self._obstacles.write(
+                json.dumps({"t": round(sim_time, 4), "poses": poses}) + "\n"
+            )
+
     def log_event(self, sim_time: float, drone_name: str, kind: str, detail: str = "") -> None:
         if not self.enabled:
             return
@@ -122,6 +148,8 @@ class Recorder:
         self._telemetry_file.close()
         self._commands.close()
         self._events.close()
+        if self._obstacles is not None:
+            self._obstacles.close()
         self._closed = True
 
     def __enter__(self) -> "Recorder":
@@ -165,6 +193,7 @@ def load_run(directory: str | Path) -> dict:
         "telemetry": telemetry,
         "commands": read_jsonl(directory / "commands.jsonl"),
         "events": read_jsonl(directory / "events.jsonl"),
+        "obstacles": read_jsonl(directory / "obstacles.jsonl"),
         "manifest": manifest,
     }
 

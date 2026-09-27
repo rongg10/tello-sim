@@ -24,6 +24,7 @@ import numpy as np
 
 from .config import DEFAULT_SIM, DroneSpec, SimSpec
 from .drone import SimDrone
+from .physics import MuJoCoBackend
 from .recorder import Recorder
 from .world import World
 
@@ -65,8 +66,28 @@ class Simulator:
         self._requests_lock = threading.Lock()
         self._listeners: list[Callable[[SimDrone, float], None]] = []
 
+        # Called on every physics step, not at the telemetry rate. The benchmark
+        # uses this for minimum-clearance: a drone at 1 m/s covers 10 cm between
+        # telemetry packets, which is most of the gap you were trying to measure.
+        self.step_probes: list[Callable[["Simulator"], None]] = []
+
         self.separation_events: list[tuple[float, str, str, float]] = []
         self.min_separation = 0.0
+
+        # The physics engine is built on first use, not here, because a model
+        # has to contain every drone and callers add drones after constructing
+        # the simulator. `_world_revision` catches obstacles appearing later:
+        # a compiled MuJoCo model cannot gain a body, so it has to be rebuilt.
+        self._backend: MuJoCoBackend | None = None
+        self._world_revision = -1
+
+        # Held for every touch of the MuJoCo model. The clock thread steps it
+        # while the 3D view reads obstacle poses and scripts add or move things,
+        # and a rebuild that swaps the model out from under a running mj_step is
+        # not a wrong answer but a segfault. Measured, not assumed: without this,
+        # adding obstacles during a realtime run crashed the interpreter within
+        # seconds. Reentrant, because a step emits telemetry that reads poses.
+        self._physics_lock = threading.RLock()
 
         for drone in self.drones:
             self._attach(drone)
@@ -97,8 +118,10 @@ class Simulator:
         if not self.spec.actuation_noise:
             drone.spec.move_error_std = 0.0
             drone.spec.yaw_error_std_deg = 0.0
-        self.drones.append(drone)
-        self._attach(drone)
+        with self._physics_lock:
+            self.drones.append(drone)
+            self._attach(drone)
+            self._backend = None      # a new airframe means a new model
         return drone
 
     def _attach(self, drone: SimDrone) -> None:
@@ -126,15 +149,46 @@ class Simulator:
     # Stepping
     # ------------------------------------------------------------------
 
+    @property
+    def physics(self) -> MuJoCoBackend:
+        """The MuJoCo backend, compiled on demand and kept in step with the world."""
+        with self._physics_lock:
+            if self._backend is None:
+                self._backend = MuJoCoBackend(
+                    world=self.world,
+                    drones=self.drones,
+                    timestep=self.spec.dt,
+                    collisions=self.spec.collisions,
+                )
+                self._world_revision = self.world.revision
+            elif self.world.revision != self._world_revision:
+                self._backend.rebuild(self.drones)
+                self._world_revision = self.world.revision
+            return self._backend
+
     def step_once(self, dt: float | None = None) -> None:
-        dt = self.spec.dt if dt is None else dt
+        with self._physics_lock:
+            self._step_locked(self.spec.dt if dt is None else dt)
+
+    def _step_locked(self, dt: float) -> None:
+        backend = self.physics
 
         self.world.step_wind(dt)
-        for drone in self.drones:
-            drone.step(dt, self.time, self.world)
 
-        self._resolve_drone_collisions()
+        # Every drone decides what it wants before any of them move. They share
+        # one solver, so advancing them one at a time would make a swarm's
+        # contacts depend on list order.
+        controls = {
+            drone.name: drone.plan(dt, self.time, self.world) for drone in self.drones
+        }
+        hits = backend.step(controls, self.time, dt)
+        for drone in self.drones:
+            drone.settle(dt, self.time, self.world, hits.get(drone.name, []))
+
+        self._track_separation()
         self._drain_events()
+        for probe in self.step_probes:
+            probe(self)
 
         self.time += dt
 
@@ -143,41 +197,67 @@ class Simulator:
             self._telemetry_accumulator -= self._telemetry_period
             self._emit_telemetry()
 
-    def _resolve_drone_collisions(self) -> None:
-        """Keep drones out of each other, and remember how close they got.
+    def _track_separation(self) -> None:
+        """Remember how close the drones got to each other.
 
-        Minimum separation is the number that matters for a swarm: it is the
-        difference between a formation that works and one that only works in
-        the absence of wind.
+        Keeping two airframes apart is the solver's job now.  Measuring how near
+        they came is still ours, because minimum separation is the number that
+        matters for a swarm: it is the difference between a formation that works
+        and one that only works in the absence of wind.
         """
+        if len(self.drones) < 2:
+            return
+
         closest = float("inf")
         for i, a in enumerate(self.drones):
             for b in self.drones[i + 1:]:
-                delta = a.state.position - b.state.position
-                distance = float(np.linalg.norm(delta))
+                distance = float(np.linalg.norm(a.state.position - b.state.position))
                 closest = min(closest, distance)
-                reach = a.spec.radius + b.spec.radius
-                if distance >= reach:
-                    continue
+                if distance < a.spec.radius + b.spec.radius:
+                    self.separation_events.append((self.time, a.name, b.name, distance))
 
-                normal = delta / distance if distance > 1e-9 else np.array([1.0, 0.0, 0.0])
-                overlap = reach - distance
-                a.state.position = a.state.position + normal * (overlap * 0.5)
-                b.state.position = b.state.position - normal * (overlap * 0.5)
-
-                closing = float(np.dot(a.state.velocity - b.state.velocity, normal))
-                if closing < 0.0:
-                    a.state.velocity = a.state.velocity - normal * closing * 0.5
-                    b.state.velocity = b.state.velocity + normal * closing * 0.5
-
-                self.separation_events.append((self.time, a.name, b.name, distance))
-                a.events.append((self.time, f"contact with {b.name}"))
-                b.events.append((self.time, f"contact with {a.name}"))
-
-        if len(self.drones) > 1 and np.isfinite(closest):
+        if np.isfinite(closest):
             self.min_separation = (
                 closest if self.min_separation == 0.0 else min(self.min_separation, closest)
             )
+
+    # ------------------------------------------------------------------
+    # Editing the world while it runs
+    # ------------------------------------------------------------------
+
+    # All of these take the physics lock, so they are safe to call from any
+    # thread while the clock runs on its own: a script, the 3D view, the CLI.
+
+    def set_collisions(self, enabled: bool) -> None:
+        """Turn contact response on or off for every drone, mid-flight if needed."""
+        with self._physics_lock:
+            self.spec.collisions = bool(enabled)
+            self.physics.set_collisions(bool(enabled))
+
+    def add_obstacle(self, obstacle):
+        """Put something new in the room. The model recompiles on the next step."""
+        with self._physics_lock:
+            self.world.add_obstacle(obstacle)
+        return obstacle
+
+    def remove_obstacle(self, name: str) -> None:
+        with self._physics_lock:
+            self.world.remove_obstacle(name)
+
+    def move_obstacle(self, name: str, position=None, yaw_deg: float | None = None) -> None:
+        """Pick a movable obstacle up and put it somewhere else, right now.
+
+        Only works on obstacles declared with a motion. A static obstacle is
+        compiled into the room and has nothing to move.
+        """
+        yaw = None if yaw_deg is None else float(np.deg2rad(yaw_deg))
+        with self._physics_lock:
+            self.physics.move_obstacle(name, position=position, yaw=yaw)
+
+    def obstacle_pose(self, name: str) -> tuple[np.ndarray, float]:
+        """Where an obstacle currently is, after any scripted or physical motion."""
+        with self._physics_lock:
+            return self.physics.obstacle_pose(name)
 
     def _drain_events(self) -> None:
         if self.recorder is None:
@@ -199,6 +279,34 @@ class Simulator:
                 self.recorder.log_snapshot(drone.snapshot())
             for listener in self._listeners:
                 listener(drone, self.time)
+
+        if self.recorder is not None:
+            self.recorder.log_obstacles(self.time, self.moving_obstacle_poses())
+
+    def moving_obstacle_poses(self) -> list:
+        """Live poses of everything in the room that can move.
+
+        Static geometry is left out: it is already in the manifest and has not
+        changed, so re-recording it ten times a second would be most of the log.
+        """
+        poses = []
+        with self._physics_lock:
+            backend = self.physics
+            for obstacle in self.world.obstacles:
+                if not obstacle.movable:
+                    continue
+                position, yaw = backend.obstacle_pose(obstacle.name)
+                poses.append(
+                    {
+                        "name": obstacle.name,
+                        "p": [round(float(v), 4) for v in position],
+                        "yaw": round(float(yaw), 4),
+                        # w-first. Yaw stays for anything that only needs a
+                        # heading; the quaternion is what shows a tumble.
+                        "quat": [round(float(v), 5) for v in backend.obstacle_quat(obstacle.name)],
+                    }
+                )
+        return poses
 
     # ------------------------------------------------------------------
     # Running
@@ -307,6 +415,11 @@ class Simulator:
                 "realtime": self.spec.realtime,
                 "seed": self.spec.seed,
                 "sensor_noise": self.spec.sensor_noise,
+                # Recorded because a run with collisions off is not comparable
+                # with one where they were on, and six months later the log is
+                # the only thing left that remembers which it was.
+                "collisions": self.spec.collisions,
+                "engine": "mujoco",
             },
             "drones": [
                 {

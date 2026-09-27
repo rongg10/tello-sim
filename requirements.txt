@@ -1,6 +1,12 @@
-# The simulator itself needs only these two.
+# The simulator itself needs these three.
 numpy>=1.24
 pyyaml>=6.0
+
+# The physics engine: rigid-body dynamics and the contact solver.
+# Needs Python 3.10 or newer. On 3.9 pip tries to build it from source and
+# fails with "MUJOCO_PATH environment variable is not set", which is a
+# confusing way of saying the interpreter is too old.
+mujoco>=3.1
 
 # Plots and flight videos.
 matplotlib>=3.7

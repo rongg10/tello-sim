@@ -13,6 +13,15 @@ drones as you like:
     from tello_sim import build
     sim, swarm = build(n=3)
     swarm.connect(); swarm.takeoff()
+
+Scoring a policy -- run a scenario across several seeds and get SR, OSR, SPL
+and the energy it cost:
+
+    from tello_sim import benchmark, scenarios
+    report = benchmark.run(scenarios.load("scenarios/11_moving_door.yaml"))
+    print(report.table())
+
+Physics is MuJoCo. `pip install mujoco`, on Python 3.10 or newer.
 """
 
 from .actions import Action, Hover, MoveTo, RCVelocity, RotateTo
@@ -22,6 +31,7 @@ from .drone import SimDrone
 from .dynamics import DroneState
 from .protocol import parse_state
 from .recorder import Recorder, latest_run, load_run
+from .benchmark import Goal, Report, RunResult, Task
 from .simulator import Simulator
 from .wind import (
     BoundaryLayerWind,
@@ -34,7 +44,19 @@ from .wind import (
     WindField,
     WindTunnel,
 )
-from .world import Box, Cylinder, MissionPad, World
+from .world import (
+    Box,
+    Cylinder,
+    Dynamic,
+    Fixed,
+    MissionPad,
+    Orbit,
+    Placed,
+    Sphere,
+    Swing,
+    Waypoints,
+    World,
+)
 
 __all__ = [
     "Action", "Hover", "MoveTo", "RCVelocity", "RotateTo",
@@ -45,7 +67,9 @@ __all__ = [
     "Simulator",
     "BoundaryLayerWind", "ConstantWind", "GustBurst", "NoWind",
     "SumOfWinds", "Transient", "TurbulentWind", "WindField", "WindTunnel",
-    "Box", "Cylinder", "MissionPad", "World",
+    "Box", "Cylinder", "Sphere", "MissionPad", "World",
+    "Fixed", "Dynamic", "Placed", "Waypoints", "Orbit", "Swing",
+    "Goal", "Task", "Report", "RunResult",
 ]
 
 __version__ = "0.1.0"

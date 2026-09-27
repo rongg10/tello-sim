@@ -1,0 +1,66 @@
+name: moving door
+description: >
+  A door swings open and shut on a six second cycle, and the only way through
+  the partition is the gap it covers. The drone flies a fixed route, so whether
+  it gets through depends entirely on when it arrives. Run it across several
+  seeds and the success rate is a measurement of timing, not of navigation.
+
+  This is the scenario that needs a physics engine. With the old point-mass
+  model the door could not move at all, so the question could not be asked.
+
+sim:
+  realtime: false
+  seed: 11
+  dt: 0.005
+
+world:
+  name: partitioned lab
+  bounds_lower: [-4.0, -2.5, 0.0]
+  bounds_upper: [4.0, 2.5, 2.5]
+  obstacles:
+    # The partition, with a one metre gap in the middle for the doorway.
+    - {type: box, lower: [-0.1, 0.5, 0.0], upper: [0.1, 2.5, 2.5], name: wall_north}
+    - {type: box, lower: [-0.1, -2.5, 0.0], upper: [0.1, -0.5, 2.5], name: wall_south}
+    # The door itself: hinged at the south edge of the gap, sweeping the
+    # doorway shut. At 0 degrees it lies along +y and blocks the gap; at 90 it
+    # has swung clear against the partition.
+    - type: box
+      name: door
+      lower: [-0.04, -0.5, 0.0]
+      upper: [0.04, 0.5, 2.1]
+      rgba: [0.55, 0.38, 0.22, 1.0]
+      motion:
+        type: swing
+        pivot: [0.0, -0.5, 1.05]
+        from_deg: 0
+        to_deg: 88
+        period: 6.0
+  mission_pads:
+    - {pad_id: 1, center: [-2.0, 0.0]}
+    - {pad_id: 2, center: [2.0, 0.0]}
+  wind:
+    type: turbulent
+    mean: [0.0, 0.0, 0.0]
+    sigma: 0.25
+    theta: 0.8
+
+drones:
+  - {name: tello-1, start: [-2.5, 0.0, 0.0]}
+
+script:
+  - all: takeoff
+  - all: "speed 60"
+  - {drone: tello-1, cmd: "forward 150"}
+  - wait: 0.5
+  # The doorway is at x=0. This leg commits: if the door is across the gap,
+  # the drone arrives into it.
+  - {drone: tello-1, cmd: "forward 200"}
+  - wait: 1.0
+  - {drone: tello-1, cmd: "forward 100"}
+  - all: land
+
+benchmark:
+  name: get through the doorway before the door closes
+  goal: [2.0, 0.0, 0.8]
+  success_radius: 0.5
+  time_limit: 45

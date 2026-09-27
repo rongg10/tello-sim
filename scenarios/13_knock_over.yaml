@@ -1,0 +1,47 @@
+name: knock over
+description: >
+  A tower of light foam bricks straight ahead of the drone, and nothing else.
+  Take off and fly forward into it. The bricks topple, bounce off each other and
+  settle wherever they land, which is the quickest way to see that there is a
+  rigid-body engine under the simulator: the old point-mass model had no way to
+  move an obstacle at all, let alone knock one over.
+
+  Worth trying twice: once as it is, and once with --no-collisions, when the
+  drone passes through the tower and leaves it standing.
+
+sim:
+  realtime: false
+  seed: 13
+  dt: 0.005
+
+world:
+  name: playroom
+  bounds_lower: [-3.0, -2.0, 0.0]
+  bounds_upper: [3.0, 2.0, 2.5]
+  obstacles:
+    # Four foam bricks, 15 x 15 x 25 cm and 20 g each, stacked to one metre.
+    # Taller than they are wide on purpose: a knocked-over cube looks exactly
+    # like a standing one, a knocked-over brick is obviously lying on its side.
+    # The drone cruises at 80 cm, so it meets the top brick.
+    #
+    # They are this light because a Tello weighs 80 g and pushes with about a
+    # quarter of a newton, which will not shift a real cardboard box.
+    - {type: box, name: brick_1, lower: [0.425, -0.075, 0.00], upper: [0.575, 0.075, 0.25],
+       mass: 0.02, motion: dynamic, rgba: [0.85, 0.35, 0.30, 1.0]}
+    - {type: box, name: brick_2, lower: [0.425, -0.075, 0.25], upper: [0.575, 0.075, 0.50],
+       mass: 0.02, motion: dynamic, rgba: [0.90, 0.65, 0.25, 1.0]}
+    - {type: box, name: brick_3, lower: [0.425, -0.075, 0.50], upper: [0.575, 0.075, 0.75],
+       mass: 0.02, motion: dynamic, rgba: [0.40, 0.70, 0.40, 1.0]}
+    - {type: box, name: brick_4, lower: [0.425, -0.075, 0.75], upper: [0.575, 0.075, 1.00],
+       mass: 0.02, motion: dynamic, rgba: [0.30, 0.55, 0.85, 1.0]}
+
+drones:
+  - {name: tello-1, start: [-1.5, 0.0, 0.0]}
+
+script:
+  - all: takeoff
+  - all: "speed 50"
+  - {drone: tello-1, cmd: "forward 100"}
+  - {drone: tello-1, cmd: "forward 100"}
+  - wait: 3.0
+  - all: land

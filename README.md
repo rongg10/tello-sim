@@ -50,27 +50,47 @@ real bug rather than a simulator artefact.
 
 ## Setup
 
-Any Python 3.9 or newer works:
+**Python 3.10 or newer.** The physics engine is MuJoCo, which publishes wheels
+for 3.10 and up only.
 
 ```bash
-python3 -m venv .venv && source .venv/bin/activate
+python3.12 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-On macOS you can double-click `setup.command` from Finder instead, which does
-the same thing and then prints what to run next.
+On macOS you can double-click `setup.command` from Finder instead, which picks a
+suitable interpreter for you and then prints what to run next.
 
-One caveat, and only for `run_gui_sim.py`: it needs a Python built with tkinter,
-which many pyenv and Homebrew builds are not. If `import tkinter` fails, rebuild
-the environment on a Python that has it. On macOS, `/usr/bin/python3 -m venv`
-is the dependable choice. Nothing else in the project needs tkinter.
+If pip tries to build MuJoCo from source and stops with `MUJOCO_PATH environment
+variable is not set`, the interpreter is too old. Check `python -V`. That error
+message is a confusing way of saying "no wheel for this version".
 
-Verified on Python 3.9, 3.12 and 3.13, and the physics is byte-identical across
-all three.
+**tkinter, for the GUI launcher only.** `run_gui_sim.py` needs a Python that is
+3.10 or newer *and* built with tkinter, and on macOS the second part is easy to
+miss. The system Python at `/usr/bin/python3` has tkinter but is 3.9, too old for
+MuJoCo. Homebrew and pyenv builds have it only if Tcl/Tk was installed when that
+Python was built, so two interpreters of the same version can differ. Check one:
+
+```bash
+python -c "import sys, tkinter; print(sys.version)"
+```
+
+`setup.command` looks for a Python that passes both tests first, including pyenv
+versions that are not the global default, and settles for one without tkinter
+only if it finds none. If you already have a suitable environment, activate it
+and run the script from there; it installs into the active environment. If you
+have none:
+
+```bash
+brew install python@3.13 python-tk@3.13
+rm -rf .venv && ./setup.command
+```
+
+The 3D view needs none of this. It is a web page, not a desktop window.
 
 ---
 
-## Five ways to use it
+## Six ways to use it
 
 ### 1. Live 3D view, flown from the page
 
@@ -275,21 +295,60 @@ use the UDP path to check that real flight code behaves.
 Use `drone.sleep(seconds)`, not `time.sleep` — the first advances the
 simulation, the second just makes you wait.
 
+### 6. Score a scenario instead of watching it
+
+```bash
+python run_benchmark.py --all
+```
+
+Flies each scored scenario across several seeds and prints SR, OSR, SPL, NE,
+energy and crash rate, then writes every individual run to JSON. See
+**Benchmarks** below.
+
 ---
 
 ## What is actually simulated
 
-**Motion.** A point mass with drag. Not four rotors, deliberately: the SDK never
-exposes motor commands, so rotor aerodynamics would add parameters nobody can
-measure and change nothing you can observe. One equation carries the model:
+**Motion.** MuJoCo, running a full rigid body with real contacts. The drone is a
+flat disc with mass and a moment of inertia, and it tilts to fly:
 
 ```
-m · dv/dt  =  F_control  −  c · (v − v_wind)
+thrust  =  | m · (a_cmd + g) |      applied along the body's ACTUAL up-axis
+torque  =  geometric attitude controller driving that axis toward
+           the direction the thrust was supposed to point
 ```
 
-Drag acts on velocity *relative to the air*, so wind is a force pushing the
-drone downwind whenever it is not already moving with the air. The flight
-controller fights back, but only up to `mass × max_accel`. Past that it loses.
+That ordering is the point. A real quadrotor cannot push sideways; it must tilt
+first, and the tilt takes time. So a commanded sideways move produces a tilt, and
+the tilt produces the acceleration. Attitude is a state with dynamics, not a
+number computed afterwards for the telemetry packet, which means a drone knocked
+sideways by a door has to fly itself level again.
+
+Four individual rotors are still not modelled, for the original reason: the SDK
+never exposes motor commands, so rotor thrust curves and motor time constants are
+parameters nobody can measure through the interface we actually have. Total
+thrust plus body torque has the same observable consequences and every constant
+in it can be calibrated from a flight log.
+
+Wind is unchanged, because it was never the part that needed an engine. Drag acts
+on velocity *relative to the air*, so wind is a force pushing the drone downwind
+whenever it is not already moving with the air. The flight controller fights
+back, but only up to `mass × max_accel`. Past that it loses.
+
+**Contacts.** Real ones, from the solver. A drone scraping a doorframe is slowed
+and turned by it; a drone that clips a crate knocks the crate over. Collisions
+can be switched off, which makes the drones ghosts to the walls, the obstacles
+and each other while still reporting what they *would* have hit. The floor still
+holds them up. Where the switch lives depends on how you are flying:
+
+| flying with | switch |
+|---|---|
+| `run_sim3d.py`, `run_sim.py` | `--no-collisions` |
+| `run_scenario.py` | `collisions: false` under `sim:` in the scenario file |
+| `run_benchmark.py` | `--no-collisions`, or `--ablate-collisions` for both |
+
+The live launchers take the flag rather than the file setting because they build
+the room from a scenario but run their own clock. See the ablation below.
 
 **Wind.** Steady, gusty (an Ornstein–Uhlenbeck process, so gusts have realistic
 duration), a deterministic burst at a chosen second, a boundary layer that gets
@@ -302,10 +361,25 @@ for a while, and then not.
 because holding a tilt costs power the whole time. Calibrated to roughly 13
 minutes of hover. Below 5% the drone lands itself.
 
-**The room.** Boxes and cylinders as obstacles, walls, ceiling, floor. The
-downward time-of-flight sensor measures to whatever is under the drone, so
-flying over a table makes the reading jump — worth seeing before any policy
-treats `tof` as height above the floor.
+**The room.** Boxes, cylinders and spheres as obstacles, plus walls, ceiling and
+floor. The downward time-of-flight sensor measures to whatever is under the
+drone, so flying over a table makes the reading jump — worth seeing before any
+policy treats `tof` as height above the floor.
+
+**Things that move.** An obstacle can be given a motion, and three kinds exist
+because they answer different questions:
+
+| motion | behaves like | example |
+|---|---|---|
+| `fixed` (default) | compiled into the room, never moves | a pillar |
+| `waypoints`, `orbit`, `swing` | driven exactly as scripted, cannot be pushed | a door closing, a person pacing |
+| `dynamic` | has mass, falls and topples | a crate the drone can knock over |
+
+Scripted motion is kinematic on purpose. A door *pushed* shut by a simulated
+actuator would need a motor model and would swing open again when a drone leaned
+on it; a door *placed* shut closes on schedule, every run, which is what a
+repeatable benchmark needs. Obstacles can also be added, removed and moved while
+a flight is in progress.
 
 **Mission pads.** Tello EDU pads, detected only between 0.3 m and 1.2 m, as on
 the real hardware. `go x y z speed mid` and `jump` work.
@@ -365,12 +439,81 @@ python run_sim3d.py --list
 | `04_swarm_formation.yaml` | three drones, a one-sided draught, minimum separation |
 | `05_endurance.yaml` | patrol until the battery, not the instruction, ends it |
 
+**Things that move.** These need the physics engine; the old point-mass model
+could not pose the question at all.
+
+| file | what it measures |
+|---|---|
+| `11_moving_door.yaml` | a door on a six second cycle. Getting through is a question of timing |
+| `12_crowded_hall.yaml` | four people pacing fixed routes, plus a stack of crates to knock over |
+| `13_knock_over.yaml` | a tower of light foam bricks to fly into. The quickest way to see the engine working |
+
 Check them all for geometry mistakes — a drone starting inside a wall, a mission
 pad hidden under a desk — and optionally fly each one:
 
 ```bash
 python scripts/check_scenarios.py --fly
 ```
+
+---
+
+## Benchmarks
+
+A scenario says what the room is and what the drone was told to do. A benchmark
+adds what counts as doing it well: a goal, a radius and a deadline.
+
+```yaml
+benchmark:
+  goal: [2.0, 0.0, 0.8]
+  success_radius: 0.5
+  time_limit: 45
+```
+
+```bash
+python run_benchmark.py --all                          # every scored scenario
+python run_benchmark.py scenarios/08_slalom.yaml --seeds 10
+python run_benchmark.py --all --ablate-collisions      # contacts on vs off
+python run_benchmark.py scenarios/08_slalom.yaml --wind 0 0.5 1.0 1.5
+```
+
+The navigation metrics use the names aerial vision-and-language navigation work
+reports, so a number from here can sit in the same table as a published one:
+
+| metric | meaning |
+|---|---|
+| **SR** | success rate: did it finish inside the goal radius? |
+| **OSR** | oracle success rate: did it *ever* pass inside, even if it wandered off? |
+| **SPL** | success weighted by path length. 1.0 is a perfect straight line |
+| **NE** | navigation error: metres from the goal at the end |
+
+Three more that the aerial benchmarks do not report, because their simulators
+cannot: **energy** (battery percent consumed), **collisions**, and **clearance**
+(the closest the drone ever came to a surface, sampled every physics step).
+
+The gap between SR and OSR is the interesting one. It is the share of runs that
+found the goal and then failed to stop, which is a different failure from never
+finding it and wants a different fix.
+
+Every scenario runs across several seeds, because actuation noise, sensor noise
+and gust timing all come off the seed. One run of one scenario is an anecdote.
+
+### The collision ablation
+
+`--ablate-collisions` runs each scenario twice and prints the pair:
+
+```
+condition                    n    SR   OSR   SPL    NE(m)  energy%  crash  clear(m)
+-----------------------------------------------------------------------------------
+corridor [solid]             5  0.20  0.20  0.18     5.27      6.5   0.80      0.02
+corridor [ghost]             5  0.20  0.20  0.18     1.12      6.7   0.80     -0.25
+```
+
+Read that as: with contacts on the drone ends five metres short, with them off
+only one. So the corridor route is roughly right and nearly all the failure is
+the drone catching on doorframes — which is a different problem from the route
+being wrong, and a policy that crashes at second three never gets far enough to
+show you which one it has. The floor still holds a ghost up, so a drone can
+still take off; negative clearance means it passed outside the room.
 
 ---
 
@@ -381,6 +524,8 @@ logs/<timestamp>_<name>/
   commands.jsonl    every command received, its answer, and how long it took
   telemetry.csv     position, velocity, battery and wind, 10 Hz
   events.jsonl      collisions, timeouts, battery warnings
+  obstacles.jsonl   where the movable obstacles were, 10 Hz. Only written when
+                    the scenario contains something that moves
   run.json          the scenario and every constant used
   dashboard.png     flight path, altitude, battery, wind
   flight.mp4        the video
@@ -461,9 +606,12 @@ of four 1.5 m legs:
 ```
 tello_sim/
   config.py       every physical constant, in one place
-  dynamics.py     the equation of motion, and the attitude that follows from it
+  physics.py      the MuJoCo backend: builds the model, turns commanded
+                  acceleration into thrust and torque, reads contacts back
+  dynamics.py     drone state, frame conversions, the battery model
   wind.py         wind fields
-  world.py        room, obstacles, mission pads, collisions
+  world.py        room, obstacles and how they move, mission pads
+  benchmark.py    goals, metrics (SR, OSR, SPL, NE) and the seed runner
   actions.py      what the drone is currently trying to do
   drone.py        SDK command parsing, telemetry, one aircraft
   simulator.py    the clock; steps every drone through one world
@@ -479,14 +627,37 @@ tello_sim/
   viewer/         the page itself: index.html, app.js, and three.js vendored
 ```
 
-### Why the 3D view is a web page
+### Why the physics engine is MuJoCo and the 3D view is still a web page
 
-PyBullet would have been the obvious choice and was tried first. It has no
-prebuilt wheel for Apple silicon, so it compiles from source, and its window
-insists on owning the main thread, which collides with tkinter. A page served
-over localhost needs nothing compiled, has no window-manager fights, renders
-well, and can be shown on someone else's laptop or screen-recorded. three.js is vendored in `viewer/vendor/`, so it works with no
-internet.
+Two separate decisions that are easy to confuse.
+
+**The engine.** PyBullet is the usual choice for quadrotor work and was tried
+first. It has no prebuilt wheel for Apple silicon, so it compiles from source,
+and its GUI insists on owning the main thread, which collides with tkinter.
+MuJoCo has arm64 wheels, needs nothing compiled, and is fast enough that a
+scenario still runs at roughly 70 times real time. Its own interactive viewer
+has the same main-thread problem on macOS, so it is not used.
+
+**The view.** A page served over localhost needs nothing compiled, has no
+window-manager fights, renders well, and can be shown on someone else's laptop
+or screen-recorded. three.js is vendored in `viewer/vendor/`, so it works with
+no internet. MuJoCo does the physics; three.js draws it.
+
+### What the timestep costs
+
+Free-flight trajectories agree to a millimetre across every timestep below, so
+the only thing `dt` buys is contact fidelity:
+
+| `dt` | speed | 4 m/s fall onto a 4 cm shelf |
+|---|---|---|
+| 0.002 | ~31x real time | caught, 0.3 cm penetration |
+| **0.005** (default) | **~76x** | caught, 2.0 cm penetration |
+| 0.010 | ~150x | caught, 1.3 cm penetration |
+| 0.020 | ~300x | **fell straight through** |
+
+Tunnelling is a silent failure that quietly corrupts a whole sweep, so the
+default keeps a margin. Set `dt: 0.01` to double throughput when a scenario has
+no thin obstacles and nothing falls from height.
 
 ---
 
@@ -504,5 +675,11 @@ internet.
   accept from the real controller. It has to send `command` before the drone
   will listen, exactly like everything else.
 - **Determinism** holds for the in-process path with a fixed seed: same
-  scenario, byte-identical telemetry. The UDP path depends on real network
-  timing and is not reproducible in that sense.
+  scenario, byte-identical telemetry, swarms included. MuJoCo is deterministic
+  given the same model and inputs, so adding the engine did not cost this. The
+  UDP path depends on real network timing and is not reproducible in that sense.
+- **Contact chatter is debounced.** A drone scraping a wall makes and breaks
+  contact many times a second as the solver pushes it off and the controller
+  pushes it back. Each surface has to come clear for `collision_cooldown` (0.5 s)
+  before it counts again, which turned one scrape down a corridor from a hundred
+  and five logged collisions into five.

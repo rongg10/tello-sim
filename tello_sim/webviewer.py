@@ -140,12 +140,33 @@ class ViewerState:
         return {
             "t": round(now, 2),
             "drones": drones,
+            "obstacles": self._moving_obstacles(),
             "wind": self._wind_samples(now),
             "log": list(self.log)[-40:],
             "min_separation": (
                 round(simulator.min_separation, 3) if len(simulator.drones) > 1 else None
             ),
         }
+
+    def _moving_obstacles(self) -> list:
+        """Live poses for anything that can move, so the view stays truthful.
+
+        Only the movable ones are sent. A room's worth of static geometry does
+        not change between frames, so it is described once at load and never
+        again; re-sending it ten times a second would be most of the payload.
+        """
+        # One locked call for every pose, rather than one per obstacle, so the
+        # page never sees half the room from one physics step and half from the
+        # next.
+        return [
+            {
+                "name": pose["name"],
+                "p": pose["p"],
+                "yaw_deg": round(float(np.degrees(pose["yaw"])), 1),
+                "quat": pose["quat"],
+            }
+            for pose in self.simulator.moving_obstacle_poses()
+        ]
 
     def _wind_samples(self, now: float) -> list:
         """Sample the wind on a coarse grid so the page can draw the field.

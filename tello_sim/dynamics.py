@@ -1,21 +1,13 @@
-"""Rigid-body motion for one drone.
+"""Drone state, and the small pieces of maths everything else shares.
 
-Why a point mass and not four spinning rotors: the Tello SDK never exposes
-motor commands.  You say "forward 30" and the drone's own flight controller
-does the rest.  Simulating rotor aerodynamics would add parameters nobody can
-measure through the SDK, and would change nothing you can observe.  What does
-matter is how the airframe responds to a force it cannot cancel -- wind -- and
-that is a mass, a drag coefficient and a limit on control authority.
+This used to be the physics.  It integrated a point mass by hand and resolved
+collisions by pushing a sphere out of whatever it overlapped.  MuJoCo does both
+of those now, in `physics.py`, so what is left here is the state container, the
+frame conversions the command layer needs, and the battery model.
 
-The one equation that carries the model:
-
-    m * dv/dt = F_control - c * (v - v_wind)
-
-Drag acts on velocity *relative to the air*, so wind enters as a force that
-pushes the drone downwind whenever it is not already moving with the air.  The
-flight controller fights back, but only up to mass * max_accel.  Beyond that
-the drone loses the argument and drifts, which is exactly what a real Tello
-does in a corridor draught.
+The battery stayed because it is not rigid-body physics.  No engine models the
+cost of holding a tilt against a crosswind, and that cost is one of the two
+things this simulator exists to study.
 """
 
 from __future__ import annotations
@@ -55,9 +47,13 @@ class DroneState:
     yaw: float = 0.0
     yaw_rate: float = 0.0
 
-    # Attitude is a consequence of acceleration for a quadrotor, not an input.
+    # Attitude used to be back-computed from the commanded acceleration, because
+    # a point mass has no attitude to report. It is now a real state that the
+    # engine integrates, so a drone knocked sideways by a door stays knocked
+    # sideways until it flies itself level again.
     pitch: float = 0.0
     roll: float = 0.0
+    orientation: np.ndarray = field(default_factory=lambda: np.eye(3))
 
     battery: float = 100.0
     airborne: bool = False
@@ -76,6 +72,7 @@ class DroneState:
             yaw_rate=self.yaw_rate,
             pitch=self.pitch,
             roll=self.roll,
+            orientation=self.orientation.copy(),
             battery=self.battery,
             airborne=self.airborne,
             motors_on=self.motors_on,
@@ -85,94 +82,15 @@ class DroneState:
         )
 
 
-def integrate(
-    state: DroneState,
-    spec,
-    accel_cmd: np.ndarray,
-    yaw_rate_cmd: float,
-    wind: np.ndarray,
-    dt: float,
-    resting: bool = False,
-) -> None:
-    """Advance the state by one physics step, in place.
-
-    accel_cmd is the acceleration the flight controller is asking for, in world
-    axes, already saturated by the caller.  When the motors are off it is
-    ignored and gravity takes over.
-
-    `resting` means the airframe is sitting on the ground with the motors off.
-    Friction against the floor is far stronger than the drag a draught can
-    exert on 80 grams, so it is treated as absolute: the drone stays put.
-    Leaving it out lets a landed drone creep downwind a fraction of a
-    millimetre per tick, which over a few minutes silently walks it across the
-    room and quietly ruins the takeoff reference.
-    """
-    wind = np.asarray(wind, dtype=float)
-    state.wind_seen = wind
-
-    if resting:
-        state.velocity[:] = 0.0
-        state.last_accel_cmd = np.zeros(3)
-        state.yaw_rate = 0.0
-        state.pitch = 0.0
-        state.roll = 0.0
-        return
-
-    relative_velocity = state.velocity - wind
-    drag_accel = -(spec.drag_coeff / spec.mass) * relative_velocity
-
-    if state.motors_on:
-        total_accel = np.asarray(accel_cmd, dtype=float) + drag_accel
-    else:
-        # Motors cut: only gravity and the air act on the airframe.
-        total_accel = drag_accel - np.array([0.0, 0.0, GRAVITY])
-        yaw_rate_cmd = 0.0
-
-    state.last_accel_cmd = np.asarray(accel_cmd, dtype=float).copy()
-
-    # Semi-implicit Euler: update velocity first, then use it for position.
-    # Cheap, stable at 100 Hz, and conserves energy far better than plain Euler.
-    state.velocity = state.velocity + total_accel * dt
-    state.position = state.position + state.velocity * dt
-
-    state.yaw_rate = float(yaw_rate_cmd)
-    state.yaw = wrap_angle(state.yaw + state.yaw_rate * dt)
-
-    # A quadrotor tilts in order to accelerate sideways; report that tilt so
-    # the telemetry looks like the real thing.
-    accel_body = world_to_body(state.last_accel_cmd, state.yaw)
-    state.pitch = float(np.arctan2(accel_body[0], GRAVITY))
-    state.roll = float(np.arctan2(-accel_body[1], GRAVITY))
-
-    if state.airborne:
-        state.flight_time += dt
-
-
 def attitude_basis(state: DroneState) -> np.ndarray:
     """The drone's body axes in world coordinates, as rows [forward, left, up].
 
-    Derived from physics rather than composed from Euler angles.  A quadrotor
-    cannot choose its attitude freely: the rotors only push along one axis, so
-    the airframe must tilt until that axis lines up with the total acceleration
-    it needs -- thrust plus the gravity it is holding against.  The heading then
-    fixes the one remaining degree of freedom.
-
-    Stacking three Euler rotations would give the same answer only if the order
-    and every sign happened to be right, and would be quietly wrong otherwise.
+    Read straight off the airframe's real orientation.  The previous version had
+    to infer this from the acceleration the controller had asked for, because
+    the point-mass model carried no attitude of its own; it therefore drew a
+    drone that was always perfectly poised, even mid-crash.
     """
-    up = np.asarray(state.last_accel_cmd, dtype=float) + np.array([0.0, 0.0, GRAVITY])
-    norm = float(np.linalg.norm(up))
-    up = up / norm if norm > 1e-6 else np.array([0.0, 0.0, 1.0])
-
-    heading = np.array([np.cos(state.yaw), np.sin(state.yaw), 0.0])
-    left = np.cross(up, heading)
-    norm = float(np.linalg.norm(left))
-    if norm < 1e-6:                       # pointing straight up: any heading will do
-        left = np.array([0.0, 1.0, 0.0])
-    else:
-        left = left / norm
-    forward = np.cross(left, up)
-    return np.array([forward, left, up])
+    return np.asarray(state.orientation, dtype=float).T.copy()
 
 
 def drain_battery(state: DroneState, spec, dt: float) -> None:

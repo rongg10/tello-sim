@@ -71,43 +71,162 @@ def _series(rows: Sequence[dict], key: str) -> np.ndarray:
 # ----------------------------------------------------------------------
 
 
-def _draw_box(ax, lower, upper, colour="#999999", alpha=0.18) -> None:
+def _box_corners(lower, upper) -> np.ndarray:
+    """The eight corners of a box, in the order `_BOX_FACES` indexes."""
     x0, y0, z0 = lower
     x1, y1, z1 = upper
-    corners = np.array(
+    return np.array(
         [
             [x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0],
             [x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1],
         ]
     )
-    faces = [
-        [corners[i] for i in face]
-        for face in (
-            (0, 1, 2, 3), (4, 5, 6, 7), (0, 1, 5, 4),
-            (2, 3, 7, 6), (1, 2, 6, 5), (0, 3, 7, 4),
-        )
-    ]
-    ax.add_collection3d(
-        Poly3DCollection(faces, facecolor=colour, edgecolor="#666666",
-                         linewidths=0.5, alpha=alpha)
+
+
+def _draw_box(ax, lower, upper, colour="#999999", alpha=0.18):
+    """Draw a box and return its collection, so it can be moved later."""
+    corners = _box_corners(lower, upper)
+    faces = [[corners[i] for i in face] for face in _BOX_FACES]
+    collection = Poly3DCollection(
+        faces, facecolor=colour, edgecolor="#666666", linewidths=0.5, alpha=alpha
     )
+    ax.add_collection3d(collection)
+    return collection
+
+
+class _Mover:
+    """An obstacle in a plot that can be moved to a new pose.
+
+    Needed because a recorded run of a scenario with a swinging door has to show
+    the door swinging.  Drawing the room once from the manifest, the way this
+    used to, produces a video in which every obstacle sits where the scenario
+    file first put it -- which quietly contradicts the flight it is showing.
+    """
+
+    def __init__(self, artist, local_points: np.ndarray, origin: np.ndarray, kind: str):
+        self.artist = artist
+        self.local = local_points     # geometry relative to the pose origin
+        self.origin = origin
+        self.kind = kind
+
+    def place(self, position: np.ndarray, yaw: float, quat=None) -> None:
+        """Move to a recorded pose.
+
+        Uses the full orientation when the log has one, so a block that was
+        knocked over is drawn tumbling. Older logs carry yaw alone.
+        """
+        if quat is not None:
+            rotation = _quat_matrix(quat)
+        else:
+            c, s = np.cos(yaw), np.sin(yaw)
+            rotation = np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
+        points = self.local @ rotation.T + np.asarray(position, dtype=float)
+
+        if self.kind == "box":
+            self.artist.set_verts([[points[i] for i in face] for face in _BOX_FACES])
+        else:
+            half = len(points) // 2
+            for line, chunk in zip(self.artist, (points[:half], points[half:])):
+                line.set_data(chunk[:, 0], chunk[:, 1])
+                line.set_3d_properties(chunk[:, 2])
+
+
+def _quat_matrix(q) -> np.ndarray:
+    """Rotation matrix from a w-first quaternion.
+
+    Written out here rather than imported from physics.py, because rendering
+    reads a log and must not need MuJoCo installed to do it.
+    """
+    w, x, y, z = (float(v) for v in q)
+    return np.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
+            [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
+            [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)],
+        ]
+    )
+
+
+_BOX_FACES = (
+    (0, 1, 2, 3), (4, 5, 6, 7), (0, 1, 5, 4),
+    (2, 3, 7, 6), (1, 2, 6, 5), (0, 3, 7, 4),
+)
+
+
+def _pose_origin(obstacle: dict, centre: np.ndarray) -> np.ndarray:
+    """The point the recorded pose refers to: a door's hinge, or the centre."""
+    motion = obstacle.get("motion") or {}
+    if motion.get("type") == "swing" and motion.get("pivot") is not None:
+        return np.asarray(motion["pivot"], dtype=float)
+    return centre
 
 
 def _draw_world(ax, manifest: dict) -> tuple:
     world = manifest.get("world", {})
     lower = np.array(world.get("bounds_lower", [-3, -3, 0]), dtype=float)
     upper = np.array(world.get("bounds_upper", [3, 3, 2.5]), dtype=float)
+    movers: dict = {}
 
     for obstacle in world.get("obstacles", []):
-        if obstacle.get("type") == "box":
-            _draw_box(ax, obstacle["lower"], obstacle["upper"])
-        elif obstacle.get("type") == "cylinder":
+        kind = obstacle.get("type")
+        # Anything that can move is drawn warm, so it is obvious at a glance
+        # which parts of the room will not stay put.
+        moving = obstacle.get("motion_kind", "static") != "static"
+        colour = "#8a6034" if moving else "#39424f"
+
+        if kind == "box":
+            low = np.asarray(obstacle["lower"], dtype=float)
+            high = np.asarray(obstacle["upper"], dtype=float)
+            artist = _draw_box(ax, low, high, colour=colour)
+            centre = 0.5 * (low + high)
+            corners = _box_corners(low, high)
+            if moving:
+                origin = _pose_origin(obstacle, centre)
+                movers[obstacle["name"]] = _Mover(artist, corners - origin, origin, "box")
+
+        elif kind == "cylinder":
             cx, cy = obstacle["center_xy"]
             r = obstacle["radius"]
+            z0, z1 = obstacle["z_min"], obstacle["z_max"]
             theta = np.linspace(0, 2 * np.pi, 24)
-            for z in (obstacle["z_min"], obstacle["z_max"]):
+            lines = [
                 ax.plot(cx + r * np.cos(theta), cy + r * np.sin(theta),
-                        np.full_like(theta, z), color="#888888", lw=0.8)
+                        np.full_like(theta, z), color=colour, lw=0.8)[0]
+                for z in (z0, z1)
+            ]
+            if moving:
+                centre = np.array([cx, cy, 0.5 * (z0 + z1)])
+                rings = np.vstack(
+                    [
+                        np.column_stack([r * np.cos(theta), r * np.sin(theta),
+                                         np.full_like(theta, z - centre[2])])
+                        for z in (z0, z1)
+                    ]
+                )
+                origin = _pose_origin(obstacle, centre)
+                movers[obstacle["name"]] = _Mover(
+                    lines, rings + (centre - origin), origin, "cylinder"
+                )
+
+        elif kind == "sphere":
+            c = np.asarray(obstacle["center"], dtype=float)
+            r = obstacle["radius"]
+            theta = np.linspace(0, 2 * np.pi, 24)
+            # Two great circles: enough to read as a ball in a wireframe plot.
+            rings = np.vstack(
+                [
+                    np.column_stack([r * np.cos(theta), r * np.sin(theta),
+                                     np.zeros_like(theta)]),
+                    np.column_stack([r * np.cos(theta), np.zeros_like(theta),
+                                     r * np.sin(theta)]),
+                ]
+            )
+            lines = [
+                ax.plot(*(rings[i * 24:(i + 1) * 24] + c).T, color=colour, lw=0.8)[0]
+                for i in (0, 1)
+            ]
+            if moving:
+                movers[obstacle["name"]] = _Mover(lines, rings, c, "sphere")
 
     for pad in world.get("mission_pads", []):
         cx, cy = pad["center"]
@@ -131,7 +250,7 @@ def _draw_world(ax, manifest: dict) -> tuple:
         ax.set_box_aspect((upper - lower))
     except (AttributeError, TypeError):
         pass
-    return lower, upper
+    return lower, upper, movers
 
 
 def _wind_caption(manifest: dict) -> str:
@@ -301,7 +420,12 @@ def animate(
     figure = plt.figure(figsize=(7.5, 5.6))
     ax = figure.add_subplot(111, projection="3d")
     figure.subplots_adjust(left=0.0, right=0.94, top=0.94, bottom=0.06)
-    _draw_world(ax, manifest)
+    _, _, movers = _draw_world(ax, manifest)
+
+    # Recorded poses for anything that moved, as a timeline we can index into.
+    # A run with nothing movable in it has an empty list here and pays nothing.
+    obstacle_frames = run.get("obstacles", []) or []
+    obstacle_times = np.array([f["t"] for f in obstacle_frames], dtype=float)
 
     lines, heads = {}, {}
     for index, name in enumerate(tracks):
@@ -339,6 +463,17 @@ def animate(
                     f"{name}  {track['action'][max(end - 1, 0)]:<9s}"
                     f" bat {track['battery'][max(end - 1, 0)]:5.1f}%"
                 )
+        if movers and len(obstacle_times):
+            # Nearest recorded pose rather than an interpolated one: obstacle
+            # poses are logged at the telemetry rate, and a door interpolated
+            # across a 100 ms gap would be drawn somewhere it never was.
+            index = int(np.searchsorted(obstacle_times, now))
+            index = min(index, len(obstacle_frames) - 1)
+            for pose in obstacle_frames[index]["poses"]:
+                mover = movers.get(pose["name"])
+                if mover is not None:
+                    mover.place(pose["p"], pose.get("yaw", 0.0), pose.get("quat"))
+
         caption.set_text(f"t = {now:6.2f} s\n" + "\n".join(labels))
         if rotate:
             ax.view_init(elev=24, azim=-60 + 20 * np.sin(now / max(duration, 1) * np.pi))
