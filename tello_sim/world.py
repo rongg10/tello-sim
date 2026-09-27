@@ -696,10 +696,17 @@ class World:
                 best, best_distance = obstacle, distance
         return best, best_distance
 
-    def clearance_at(self, position: np.ndarray) -> float:
-        """Distance from a point to the nearest surface, room walls included."""
+    def clearance_at(self, position: np.ndarray, include_floor: bool = True) -> float:
+        """Distance from a point to the nearest surface, room walls included.
+
+        `include_floor=False` leaves the floor out. A drone touches it on every
+        takeoff and landing, so a minimum taken over a whole flight would
+        otherwise always be the floor.
+        """
         p = np.asarray(position, dtype=float)
         gaps = np.concatenate([p - self.bounds_lower, self.bounds_upper - p])
+        if not include_floor:
+            gaps = np.delete(gaps, 2)
         return min(float(np.min(gaps)), self.nearest_obstacle(p)[1])
 
     def describe(self) -> dict:

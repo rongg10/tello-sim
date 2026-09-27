@@ -27,8 +27,10 @@ cannot:
 
     energy      battery percent consumed. Wind makes this move a lot.
     collisions  how many distinct things were hit.
-    clearance   the closest the drone ever came to a surface, sampled every
-                physics step rather than every telemetry packet.
+    clearance   the smallest gap between the drone's cage and a wall, the
+                ceiling or an obstacle, sampled every physics step. Zero or
+                below means contact. The floor is left out, because every
+                takeoff and landing touches it.
 
 Why seeds matter
 ----------------
@@ -164,7 +166,8 @@ class RunMonitor:
         self.path_length += float(np.linalg.norm(step[:2]))
         self.last_position = position.copy()
 
-        self.min_clearance = min(self.min_clearance, sim.world.clearance_at(position))
+        gap = sim.world.clearance_at(position, include_floor=False) - drone.spec.radius
+        self.min_clearance = min(self.min_clearance, gap)
 
         distance = self.task.goal.distance_from(position)
         self.min_goal_distance = min(self.min_goal_distance, distance)

@@ -1,38 +1,34 @@
 name: corridor
 description: >
   A corridor with two doorways, 90 cm wide. The drone's cage is 26 cm across, so
-  there is about 30 cm of clearance either side -- comfortable in still air and
+  there is about 30 cm of clearance either side: comfortable in still air and
   not comfortable otherwise.
 
   A cross-draught of 2.6 m/s blows across the FIRST doorway from t=8s to t=20s.
-  The drone survives it. Then it crashes into the SECOND doorway, in still air,
-  seven seconds after the wind has stopped.
+  Most runs clip that doorframe while the draught is blowing. The runs that get
+  through show the point of this scenario: they crash into the SECOND doorway,
+  in still air, 7 to 11 seconds after the wind has stopped.
 
-  That is the point of this scenario, and it was not designed in -- it came out
-  of the physics. Every command is a *relative* move, so once the gust has
-  shoved the drone half a metre sideways, nothing ever puts it back. It flies
-  the rest of the corridor perfectly, parallel to where it should be, and
-  arrives at a gap it no longer fits through. Measured over eight seeds:
-
-      seed   worst y under gust   y arriving at door 2   outcome
-        6         -0.51                 -0.32            hits door 2
-        7         -0.90                 -0.73            hits door 2
-        8         -1.04                 -0.94            hits door 2
-        9         -0.91                 -0.83            hits door 2
-       10         -0.83                 -0.59            hits door 1 and door 2
-       11         -0.55                 -0.31            hits door 2
-       12         -1.05                 -0.80            hits door 1 and door 2
-       13         -0.72                 -0.54            hits door 2
-
-  Eight out of eight. The disturbance and the failure are in different places
-  and twelve seconds apart, which is what makes this hard: at the moment of the
+  That was not designed in; it came out of the physics. Every command is a
+  *relative* move, so once the gust has shoved the drone sideways, nothing ever
+  puts it back. It flies the rest of the corridor parallel to where it should
+  be, and arrives at a gap it no longer fits through. At the moment of that
   crash there is nothing in the telemetry to react to. Recovering needs an
   absolute position fix, which on real hardware means the mission pad on the
-  floor at the corridor's midpoint -- deliberately placed there, deliberately
-  not used by the script.
+  floor at the corridor's midpoint. It is placed there deliberately, and the
+  script deliberately does not use it.
 
-  Raise the gust to 3.0 m/s and it fails at the first doorway too, immediately
-  and every time. Drop it to 1.8 and it gets through both.
+  Doorframes hit over seeds 0 to 19, by draught speed:
+
+      draught   door 1 only   door 2 only   both   neither   SR
+      1.8 m/s         0             2          0       18     20/20
+      2.2 m/s         1            10          1        8     18/20
+      2.6 m/s        13             2          4        1      2/20
+      3.0 m/s        19             0          1        0      0/20
+
+  So 2.2 m/s is where the delayed failure is the main one, and 2.6 m/s (the
+  setting below) is where the draught alone stops most runs. A graze does not
+  always end a run, which is why SR can be high while door 2 is touched.
 
 sim:
   realtime: false
