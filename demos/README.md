@@ -20,6 +20,18 @@ The `.mp4`s here are the **simulator's own render of the flight** — the room, 
 path, altitude, battery and wind. They show what the drone did, not what the
 operator saw.
 
+## Flown from the 3D view
+
+Screen recordings of `run_sim3d.py`, flown by hand with the page's buttons.
+
+| file | scenario | what happens |
+|---|---|---|
+| `crowded_hall.mp4` | `12_crowded_hall` | the drone crosses a hall while four people pace their routes |
+| `knock_over.mp4` | `13_knock_over` | the drone flies into a tower of foam bricks and topples it |
+
+GIF previews are in `preview/`. The raw captures are kept in `.raw/`, which is
+not committed.
+
 ## Screen recordings
 
 `scripts/record_demos.py` produces the other kind: a screen recording of the real

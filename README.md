@@ -5,11 +5,13 @@ the drone flies the simulator: change `192.168.10.1` to `127.0.0.1` and nothing
 else. On top of that it gives you what the real drone cannot on demand: wind,
 battery drain, moving obstacles, several drones, and repeatable scored runs.
 
-![The console and the 3D view, side by side](demos/preview/cli_demo.gif)
+| crossing a hall full of people | knocking over a tower |
+|---|---|
+| ![The drone crosses a hall while four people pace their routes](demos/preview/crowded_hall.gif) | ![The drone flies into a tower of foam bricks and topples it](demos/preview/knock_over.gif) |
+| `12_crowded_hall`, 3x speed. [Full video](demos/crowded_hall.mp4) | `13_knock_over`, real time. [Full video](demos/knock_over.mp4) |
 
-*The real `djitellopy` API typed at a prompt (right) flying the 3D view (left),
-at 2x speed. Full recording: [`demos/Demo_CLI.mp4`](demos/Demo_CLI.mp4). More
-flights, dashboards and command logs are in [`demos/`](demos/).*
+*Both flown by hand from the 3D view. More flights, dashboards and command logs
+are in [`demos/`](demos/).*
 
 ---
 
@@ -65,6 +67,10 @@ or `run_gui_sim.py --attach` can fly it at the same time.
 `run_cli.py` gives a prompt where you type the library's own calls. The object
 is a real `djitellopy.Tello` over real UDP, so its refusals are the firmware's:
 `move_forward(5)` answers `error forward out of range 20..500`.
+
+![The console and the 3D view, side by side](demos/preview/cli_demo.gif)
+
+*2x speed. Full recording: [`demos/Demo_CLI.mp4`](demos/Demo_CLI.mp4).*
 
 ```
 tello> takeoff()
